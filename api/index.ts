@@ -8,10 +8,17 @@ const environment = EnvironmentConfig.fromProcessEnv();
 const databaseConnection = new DatabaseConnection(environment.databaseUrl);
 const redisConnection = new RedisConnection(environment.redisUrl);
 
-const bootstrapPromise = Promise.all([
+const bootstrapPromise = Promise.allSettled([
     databaseConnection.connect(),
     redisConnection.connect(),
-]).then(() => {
+]).then((results) => {
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            const serviceName = index === 0 ? 'database' : 'redis';
+            console.error(`Vercel bootstrap ${serviceName} rejected`, result.reason);
+        }
+    });
+
     console.log('Vercel function bootstrap complete');
 });
 
