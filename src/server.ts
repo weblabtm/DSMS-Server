@@ -4,6 +4,7 @@ import app from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
 import { DatabaseConnection } from './infrastructure/database/database-connection.js';
 import { RedisConnection } from './infrastructure/redis/redis-connection.js';
+import type { DependencyHealthProvider } from './app.js';
 import type { Express } from 'express';
 import type { Server as HttpServer } from 'node:http';
 
@@ -67,6 +68,26 @@ class ServerBootstrap {
 const environment = EnvironmentConfig.fromProcessEnv();
 const databaseConnection = new DatabaseConnection(environment.databaseUrl);
 const redisConnection = new RedisConnection(environment.redisUrl);
+
+const dependencyHealthProvider: DependencyHealthProvider = async () => {
+    const [databaseStatus, redisStatus] = await Promise.all([
+        databaseConnection.getHealthStatus(),
+        redisConnection.getHealthStatus(),
+    ]);
+
+    return {
+        postgresql: {
+            status: databaseStatus.connected ? 'connected' : 'disconnected',
+            ...(databaseStatus.error ? { error: databaseStatus.error } : {}),
+        },
+        redis: {
+            status: redisStatus.connected ? 'connected' : 'disconnected',
+            ...(redisStatus.error ? { error: redisStatus.error } : {}),
+        },
+    };
+};
+
+app.locals.dependencyHealthProvider = dependencyHealthProvider;
 const server = new ServerBootstrap(app, environment.port, databaseConnection, redisConnection);
 
 server.start().catch((error: unknown) => {

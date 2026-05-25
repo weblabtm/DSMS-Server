@@ -2,6 +2,18 @@ import express, { type Express, type NextFunction, type Request, type Response }
 
 import { EnvironmentConfig } from './config/environment.js';
 
+type ServiceHealth = {
+    status: 'connected' | 'disconnected';
+    error?: string;
+};
+
+type DependencyHealth = {
+    postgresql: ServiceHealth;
+    redis: ServiceHealth;
+};
+
+export type DependencyHealthProvider = () => Promise<DependencyHealth>;
+
 export class ServerApplication {
     private readonly app: Express;
 
@@ -55,11 +67,43 @@ export class ServerApplication {
         };
     }
 
-    private healthCheckHandler(_request: Request, response: Response): void {
-        response.status(200).json({
-            status: 'ok',
-            message: 'Server is running',
-        });
+    private async healthCheckHandler(_request: Request, response: Response): Promise<void> {
+        const provider = this.app.locals.dependencyHealthProvider as DependencyHealthProvider | undefined;
+
+        if (!provider) {
+            response.status(200).json({
+                status: 'ok',
+                message: 'Server is running',
+            });
+            return;
+        }
+
+        try {
+            const dependencies = await provider();
+            const hasError = dependencies.postgresql.status !== 'connected' || dependencies.redis.status !== 'connected';
+
+            response.status(hasError ? 503 : 200).json({
+                status: hasError ? 'error' : 'ok',
+                message: hasError ? 'One or more dependencies are unavailable' : 'Server is running',
+                dependencies,
+            });
+        } catch (error) {
+            response.status(503).json({
+                status: 'error',
+                message: 'Unable to determine dependency status',
+                dependencies: {
+                    postgresql: {
+                        status: 'disconnected',
+                        error: 'Health check failed',
+                    },
+                    redis: {
+                        status: 'disconnected',
+                        error: 'Health check failed',
+                    },
+                },
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     private notFoundHandler(_request: Request, response: Response): void {

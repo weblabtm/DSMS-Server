@@ -2,11 +2,32 @@ import app from '../src/app.js';
 import { EnvironmentConfig } from '../src/config/environment.js';
 import { DatabaseConnection } from '../src/infrastructure/database/database-connection.js';
 import { RedisConnection } from '../src/infrastructure/redis/redis-connection.js';
+import type { DependencyHealthProvider } from '../src/app.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const environment = EnvironmentConfig.fromProcessEnv();
 const databaseConnection = new DatabaseConnection(environment.databaseUrl);
 const redisConnection = new RedisConnection(environment.redisUrl);
+
+const dependencyHealthProvider: DependencyHealthProvider = async () => {
+    const [databaseStatus, redisStatus] = await Promise.all([
+        databaseConnection.getHealthStatus(),
+        redisConnection.getHealthStatus(),
+    ]);
+
+    return {
+        postgresql: {
+            status: databaseStatus.connected ? 'connected' : 'disconnected',
+            ...(databaseStatus.error ? { error: databaseStatus.error } : {}),
+        },
+        redis: {
+            status: redisStatus.connected ? 'connected' : 'disconnected',
+            ...(redisStatus.error ? { error: redisStatus.error } : {}),
+        },
+    };
+};
+
+app.locals.dependencyHealthProvider = dependencyHealthProvider;
 
 const bootstrapPromise = Promise.allSettled([
     databaseConnection.connect(),
