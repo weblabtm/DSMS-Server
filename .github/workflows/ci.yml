@@ -18,7 +18,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            DSMS-Server/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('DSMS-Server/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -51,8 +60,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: DSMS-Server/package-lock.json
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            DSMS-Server/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('DSMS-Server/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
