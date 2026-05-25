@@ -1,44 +1,74 @@
-import express from 'express';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 
-import { environment } from './config/environment.js';
+import { EnvironmentConfig } from './config/environment.js';
 
-const app = express();
+export class ServerApplication {
+    private readonly app: Express;
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+    private readonly allowedOrigins: Set<string>;
 
-const allowedOrigins = new Set(environment.allowedOrigins);
+    public constructor(private readonly environment: EnvironmentConfig) {
+        this.app = express();
+        this.allowedOrigins = new Set(environment.allowedOrigins);
 
-app.use((request, response, next) => {
-    const origin = request.headers.origin;
-
-    if (typeof origin === 'string' && (allowedOrigins.has('*') || allowedOrigins.has(origin))) {
-        response.setHeader('Access-Control-Allow-Origin', origin);
-        response.setHeader('Vary', 'Origin');
+        this.registerMiddleware();
+        this.registerRoutes();
+        this.registerNotFoundHandler();
     }
 
-    response.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-    if (request.method === 'OPTIONS') {
-        response.sendStatus(204);
-        return;
+    public getApp(): Express {
+        return this.app;
     }
 
-    next();
-});
+    private registerMiddleware(): void {
+        this.app.use(express.json());
+        this.app.use(express.urlencoded({ extended: true }));
+        this.app.use(this.createCorsMiddleware());
+    }
 
-app.get('/health', (_request, response) => {
-    response.status(200).json({
-        status: 'ok',
-        message: 'Server is running',
-    });
-});
+    private registerRoutes(): void {
+        this.app.get('/health', this.healthCheckHandler);
+    }
 
-app.use((_request, response) => {
-    response.status(404).json({
-        message: 'Route not found',
-    });
-});
+    private registerNotFoundHandler(): void {
+        this.app.use(this.notFoundHandler);
+    }
 
-export default app;
+    private createCorsMiddleware() {
+        return (request: Request, response: Response, next: NextFunction) => {
+            const origin = request.headers.origin;
+
+            if (typeof origin === 'string' && (this.allowedOrigins.has('*') || this.allowedOrigins.has(origin))) {
+                response.setHeader('Access-Control-Allow-Origin', origin);
+                response.setHeader('Vary', 'Origin');
+            }
+
+            response.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+            response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+            if (request.method === 'OPTIONS') {
+                response.sendStatus(204);
+                return;
+            }
+
+            next();
+        };
+    }
+
+    private healthCheckHandler(_request: Request, response: Response): void {
+        response.status(200).json({
+            status: 'ok',
+            message: 'Server is running',
+        });
+    }
+
+    private notFoundHandler(_request: Request, response: Response): void {
+        response.status(404).json({
+            message: 'Route not found',
+        });
+    }
+}
+
+const serverApplication = new ServerApplication(EnvironmentConfig.fromProcessEnv());
+
+export default serverApplication.getApp();

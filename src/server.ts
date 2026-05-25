@@ -1,10 +1,22 @@
 import 'dotenv/config';
 
 import app from './app.js';
-import { environment } from './config/environment.js';
+import { EnvironmentConfig } from './config/environment.js';
 
-const port = environment.port;
+class ServerBootstrap {
+    public constructor(
+        private readonly application: typeof app,
+        private readonly port: number,
+    ) { }
 
-app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
-});
+    public start(): void {
+        this.application.listen(this.port, () => {
+            console.log(`Server running on http://localhost:${this.port}`);
+        });
+    }
+}
+
+const environment = EnvironmentConfig.fromProcessEnv();
+const server = new ServerBootstrap(app, environment.port);
+
+server.start();
