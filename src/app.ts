@@ -67,8 +67,8 @@ export class ServerApplication {
         };
     }
 
-    private async healthCheckHandler(_request: Request, response: Response): Promise<void> {
-        const provider = this.app.locals.dependencyHealthProvider as DependencyHealthProvider | undefined;
+    private async healthCheckHandler(request: Request, response: Response): Promise<void> {
+        const provider = request.app.locals.dependencyHealthProvider as DependencyHealthProvider | undefined;
 
         if (!provider) {
             response.status(200).json({
