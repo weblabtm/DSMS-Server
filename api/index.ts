@@ -9,13 +9,13 @@ const databaseConnection = new DatabaseConnection(environment.databaseUrl);
 const redisConnection = new RedisConnection(environment.redisUrl);
 
 const bootstrapPromise = Promise.all([
-	databaseConnection.connect(),
-	redisConnection.connect(),
+    databaseConnection.connect(),
+    redisConnection.connect(),
 ]).then(() => {
-	console.log('Vercel function bootstrap complete');
+    console.log('Vercel function bootstrap complete');
 });
 
 export default async function handler(request: IncomingMessage, response: ServerResponse): Promise<void> {
-	await bootstrapPromise;
-	app(request, response);
+    await bootstrapPromise;
+    app(request, response);
 }
