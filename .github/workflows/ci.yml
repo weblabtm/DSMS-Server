@@ -31,22 +31,18 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-        working-directory: ./
 
       - name: Generate Prisma client
         run: npx prisma generate
-        working-directory: ./
 
       - name: Build
         run: npm run build
-        working-directory: ./
 
       - name: Run tests
         env:
           DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms
           REDIS_URL: redis://127.0.0.1:6379
         run: npm run test:ci
-        working-directory: ./
 
   build:
     name: Build server
@@ -73,12 +69,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-        working-directory: DSMS-Server
 
       - name: Generate Prisma client
         run: npx prisma generate
-        working-directory: DSMS-Server
 
       - name: Build server
         run: npm run build
-        working-directory: DSMS-Server
