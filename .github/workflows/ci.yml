@@ -24,19 +24,16 @@ jobs:
         with:
           path: |
             ~/.npm
-            DSMS-Server/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('DSMS-Server/package-lock.json') }}
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Build
-        run: npm run build
+      - name: Vercel build
+        run: npm run vercel-build
 
       - name: Run tests
         env:
@@ -62,16 +59,13 @@ jobs:
         with:
           path: |
             ~/.npm
-            DSMS-Server/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('DSMS-Server/package-lock.json') }}
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Build server
-        run: npm run build
+      - name: Vercel build
+        run: npm run vercel-build
