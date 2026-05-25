@@ -2,21 +2,74 @@ import 'dotenv/config';
 
 import app from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
+import { DatabaseConnection } from './infrastructure/database/database-connection.js';
+import { RedisConnection } from './infrastructure/redis/redis-connection.js';
+import type { Express } from 'express';
+import type { Server as HttpServer } from 'node:http';
 
 class ServerBootstrap {
+    private httpServer: HttpServer | null = null;
+
     public constructor(
-        private readonly application: typeof app,
+        private readonly application: Express,
         private readonly port: number,
+        private readonly databaseConnection: DatabaseConnection,
+        private readonly redisConnection: RedisConnection,
     ) { }
 
-    public start(): void {
-        this.application.listen(this.port, () => {
+    public async start(): Promise<void> {
+        await Promise.all([
+            this.databaseConnection.connect(),
+            this.redisConnection.connect(),
+        ]);
+
+        this.httpServer = this.application.listen(this.port, () => {
             console.log(`Server running on http://localhost:${this.port}`);
         });
+
+        this.registerShutdownHooks();
+    }
+
+    private registerShutdownHooks(): void {
+        const shutdown = async () => {
+            await this.stop();
+            process.exit(0);
+        };
+
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
+    }
+
+    private async stop(): Promise<void> {
+        await new Promise<void>((resolve, reject) => {
+            if (!this.httpServer) {
+                resolve();
+                return;
+            }
+
+            this.httpServer.close((error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve();
+            });
+        });
+
+        await Promise.all([
+            this.redisConnection.disconnect(),
+            this.databaseConnection.disconnect(),
+        ]);
     }
 }
 
 const environment = EnvironmentConfig.fromProcessEnv();
-const server = new ServerBootstrap(app, environment.port);
+const databaseConnection = new DatabaseConnection(environment.databaseUrl);
+const redisConnection = new RedisConnection(environment.redisUrl);
+const server = new ServerBootstrap(app, environment.port, databaseConnection, redisConnection);
 
-server.start();
+server.start().catch((error: unknown) => {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+});
