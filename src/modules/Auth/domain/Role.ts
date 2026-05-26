@@ -1,3 +1,7 @@
+/**
+ * Canonical role names used by the RBAC system.
+ * Keep this list aligned with the business roles and seed data.
+ */
 export const ROLE_NAMES = [
     'Super Admin',
     'Tenant Admin',
@@ -7,15 +11,10 @@ export const ROLE_NAMES = [
     'Student',
 ] as const;
 
-/**
- * A strongly typed role name list used by RBAC and auth decisions.
- * Keep this list aligned with the roles supported by the business.
- */
 export type RoleName = (typeof ROLE_NAMES)[number];
 
 /**
- * Role is a lightweight value object.
- * It only stores identity and exposes equality for comparisons.
+ * Lightweight role value object for comparisons and identity checks.
  */
 export class Role {
     public constructor(public readonly name: RoleName) { }

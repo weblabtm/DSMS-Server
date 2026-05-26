@@ -11,3 +11,82 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum PermissionScope {
+  global
+  tenant
+  branch
+  own
+}
+
+model Permission {
+  id         String           @id @default(cuid())
+  key        String           @unique
+  moduleName String
+  action     String
+  scope      PermissionScope
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([moduleName, action])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  isSystem    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+}
+
+model RolePermission {
+  id           String      @id @default(cuid())
+  roleId       String
+  permissionId String
+  tenantId     String?
+  branchId     String?
+  createdAt    DateTime    @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId, tenantId, branchId])
+  @@index([tenantId, branchId])
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  tenantId  String?
+  branchId  String?
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, tenantId, branchId])
+  @@index([userId, tenantId, branchId])
+}
+
+model AuthSession {
+  id              String   @id @default(cuid())
+  userId          String
+  accessTokenJti  String   @unique
+  refreshTokenHash String   @unique
+  tokenVersion    Int      @default(0)
+  tenantId        String?
+  branchId        String?
+  revokedAt       DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tenantId, branchId])
+}

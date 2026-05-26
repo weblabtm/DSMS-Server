@@ -1,9 +1,9 @@
+/**
+ * Central permission registry for the whole application.
+ * Add new permission keys here first so guards, policies, and seeders stay consistent.
+ */
 import { Permission } from '../domain/Permission.js';
 
-/**
- * Default permissions for the whole system.
- * The catalog acts as a single source of truth for permission keys.
- */
 const DEFAULT_PERMISSIONS = [
     new Permission('auth.login', 'Auth', 'login', 'own'),
     new Permission('auth.refresh', 'Auth', 'refresh', 'own'),
@@ -36,8 +36,7 @@ const DEFAULT_PERMISSIONS = [
 ] as const;
 
 /**
- * Reads and queries the permission catalog.
- * This class should stay read-only so permission definitions remain centralized.
+ * Read-only accessor for the canonical permission catalog.
  */
 export class PermissionCatalog {
     private readonly permissions: Permission[];

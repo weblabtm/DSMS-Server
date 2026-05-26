@@ -1,11 +1,11 @@
+/**
+ * Maps each business role to the permissions it receives by default.
+ * This matrix is the seed source for persisted role-permission records.
+ */
 import { Permission } from '../domain/Permission.js';
 import { ROLE_NAMES, type RoleName } from '../domain/Role.js';
 import { PermissionCatalog } from './PermissionCatalog.js';
 
-/**
- * Hard-coded default mapping between each business role and its allowed permissions.
- * This is the first version of the RBAC matrix and can later move to database seeding.
- */
 const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly string[]> = {
     'Tenant Admin': [
         'tenant.manage',
@@ -81,8 +81,7 @@ const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly st
 };
 
 /**
- * Resolves which permissions belong to each role.
- * Super Admin always receives everything, while other roles are explicitly limited.
+ * Resolves role permissions from the canonical catalog.
  */
 export class RoleMatrix {
     public constructor(private readonly permissionCatalog: PermissionCatalog = new PermissionCatalog()) { }

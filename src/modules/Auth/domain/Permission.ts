@@ -1,3 +1,7 @@
+/**
+ * RBAC permission value object.
+ * This keeps the permission key, module, action, and scope in one place.
+ */
 export type PermissionScope = 'global' | 'tenant' | 'branch' | 'own';
 
 /**

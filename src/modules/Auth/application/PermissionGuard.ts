@@ -1,11 +1,11 @@
+/**
+ * Minimal authorization guard for role-to-permission checks.
+ * Controllers and services should call this instead of duplicating RBAC logic.
+ */
 import { ForbiddenError } from '../../../shared/errors/ForbiddenError.js';
 import { type RoleName } from '../domain/Role.js';
 import { RoleMatrix } from './RoleMatrix.js';
 
-/**
- * Guard that answers one question only: can this role perform this action?
- * Controllers and services should use this instead of duplicating RBAC checks.
- */
 export class PermissionGuard {
     public constructor(private readonly roleMatrix: RoleMatrix = new RoleMatrix()) { }
 
