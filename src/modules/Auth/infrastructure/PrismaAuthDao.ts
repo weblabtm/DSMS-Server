@@ -20,16 +20,20 @@
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { AuthDao } from '../application/dao/AuthDao.js';
 import type { AuthLoginRequestDto, AuthPrincipalDto, AuthRegisterRequestDto } from '../application/dtos/AuthDtos.js';
+import bcrypt from 'bcryptjs';
 
 export class PrismaAuthDao implements AuthDao {
     public constructor(private readonly prisma: PrismaClient) { }
 
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {
         // `authUser` assumes a Prisma model named `AuthUser` (lower-cased in the client).
-        // Keep password handling simple to match tests; in production prefer hashing.
         const user = await (this.prisma as any).authUser.findUnique({ where: { identifier: credentials.identifier } });
 
-        if (!user || user.password !== credentials.password) {
+        if (!user) return null;
+
+        const match = await bcrypt.compare(String(credentials.password), String(user.password));
+
+        if (!match) {
             return null;
         }
 
@@ -59,10 +63,12 @@ export class PrismaAuthDao implements AuthDao {
             throw new Error('Account already exists');
         }
 
+        const hashed = await bcrypt.hash(String(account.password), 10);
+
         const created = await (this.prisma as any).authUser.create({
             data: {
                 identifier: account.identifier,
-                password: account.password,
+                password: hashed,
                 ...(account.tenantId ? { tenantId: account.tenantId } : {}),
                 ...(account.branchId ? { branchId: account.branchId } : {}),
             },

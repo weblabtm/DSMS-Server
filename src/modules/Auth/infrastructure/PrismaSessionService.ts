@@ -1,7 +1,7 @@
 /**
  * Prisma-backed session manager. Persists refresh sessions to the `AuthSession` table.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { CreateSessionInput, CreateSessionWithAccessJtiInput, SessionRecord } from '../application/services/SessionService.js';
 
@@ -14,7 +14,7 @@ export class PrismaSessionService {
     }
 
     public async createSessionWithAccessJti(input: CreateSessionWithAccessJtiInput): Promise<SessionRecord> {
-        const refreshToken = cryptoRandom();
+        const refreshToken = randomUUID();
         const refreshHash = this.hashToken(refreshToken);
         const now = Math.floor(Date.now() / 1000);
         const expiresAt = new Date((now + this.refreshTokenTtlSeconds) * 1000);
@@ -75,7 +75,7 @@ export class PrismaSessionService {
 
         if (!existing) throw new Error('Refresh token is not active');
 
-        const newRefresh = cryptoRandom();
+        const newRefresh = randomUUID();
         const newHash = this.hashToken(newRefresh);
         const newExpires = new Date((Math.floor(Date.now() / 1000) + this.refreshTokenTtlSeconds) * 1000);
 
@@ -110,11 +110,4 @@ export class PrismaSessionService {
     private hashToken(token: string): string {
         return createHash('sha256').update(token).digest('hex');
     }
-}
-
-function cryptoRandom(): string {
-    // lightweight UUID v4 replacement
-    return typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function'
-        ? (crypto as any).randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
