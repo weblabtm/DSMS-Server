@@ -7,7 +7,7 @@ import { type RoleName } from '../../domain/Role.js';
 import { type AuthDao } from '../dao/AuthDao.js';
 import { type AuthLoginRequestDto, type AuthLogoutRequestDto, type AuthRefreshRequestDto, type AuthRegisterRequestDto, type AuthSessionResponseDto } from '../dtos/AuthDtos.js';
 import { PermissionGuard } from '../PermissionGuard.js';
-import { SessionService, type SessionRecord } from './SessionService.js';
+import type { SessionRecord, CreateSessionInput, CreateSessionWithAccessJtiInput } from './SessionService.js';
 import { TokenService, type AccessTokenClaims } from './TokenService.js';
 
 export type AuthSessionBundle = {
@@ -20,7 +20,14 @@ export type AuthSessionBundle = {
 
 export type AuthServiceDependencies = {
     tokenService: TokenService;
-    sessionService: SessionService;
+    sessionService: {
+        createSession(input: CreateSessionInput): Promise<SessionRecord>;
+        createSessionWithAccessJti(input: CreateSessionWithAccessJtiInput): Promise<SessionRecord>;
+        findByRefreshToken(refreshToken: string): Promise<SessionRecord | undefined>;
+        rotateRefreshToken(refreshToken: string): Promise<SessionRecord>;
+        revokeSession(sessionId: string): Promise<void>;
+        updateAccessTokenJti?(sessionId: string, accessTokenJti: string): Promise<void>;
+    };
     authDao: AuthDao;
     permissionGuard?: PermissionGuard;
 };
@@ -39,7 +46,7 @@ export class AuthService {
             throw new Error('Invalid credentials');
         }
 
-        return this.toSessionResponse(this.issueSession({
+        return this.toSessionResponse(await this.issueSession({
             userId: principal.userId,
             roles: principal.roles,
             tenantId: principal.tenantId,
@@ -48,34 +55,37 @@ export class AuthService {
         }));
     }
 
-    public issueSession(principal: {
+    public async issueSession(principal: {
         userId: string;
         roles: readonly RoleName[];
         tenantId?: string;
         branchId?: string;
         tokenVersion?: number;
-    }): AuthSessionBundle {
-        const session = this.dependencies.sessionService.createSession({
-            userId: principal.userId,
+    }): Promise<AuthSessionBundle> {
+        const accessToken = this.dependencies.tokenService.issueAccessToken({
+            subject: principal.userId,
             roles: principal.roles,
             tenantId: principal.tenantId,
             branchId: principal.branchId,
             tokenVersion: principal.tokenVersion,
         });
 
-        const accessToken = this.dependencies.tokenService.issueAccessToken({
-            subject: principal.userId,
+        const claims = this.dependencies.tokenService.verifyAccessToken(accessToken);
+
+        const session = await this.dependencies.sessionService.createSessionWithAccessJti({
+            userId: principal.userId,
             roles: principal.roles,
             tenantId: principal.tenantId,
             branchId: principal.branchId,
-            tokenVersion: session.tokenVersion,
+            tokenVersion: principal.tokenVersion,
+            accessTokenJti: claims.jti,
         });
 
         return {
             sessionId: session.sessionId,
             refreshToken: session.refreshToken,
             accessToken,
-            claims: this.dependencies.tokenService.verifyAccessToken(accessToken),
+            claims,
             accessContext: new AccessContext({
                 userId: principal.userId,
                 roles: principal.roles,
@@ -87,13 +97,13 @@ export class AuthService {
     }
 
     public async refresh(request: AuthRefreshRequestDto): Promise<AuthSessionResponseDto> {
-        return this.toSessionResponse(this.refreshSession(request.refreshToken));
+        return this.toSessionResponse(await this.refreshSession(request.refreshToken));
     }
 
     public async register(account: AuthRegisterRequestDto): Promise<AuthSessionResponseDto> {
         const principal = await this.dependencies.authDao.register(account);
 
-        return this.toSessionResponse(this.issueSession({
+        return this.toSessionResponse(await this.issueSession({
             userId: principal.userId,
             roles: principal.roles,
             tenantId: principal.tenantId,
@@ -103,17 +113,19 @@ export class AuthService {
     }
 
     public logout(request: AuthLogoutRequestDto): void {
-        const session = this.dependencies.sessionService.findByRefreshToken(request.refreshToken);
+        (async () => {
+            const session = await (this.dependencies.sessionService as any).findByRefreshToken(request.refreshToken);
 
-        if (!session) {
-            return;
-        }
+            if (!session) {
+                return;
+            }
 
-        this.dependencies.sessionService.revokeSession(session.sessionId);
+            await (this.dependencies.sessionService as any).revokeSession(session.sessionId);
+        })();
     }
 
-    public refreshSession(refreshToken: string): AuthSessionBundle {
-        const session: SessionRecord = this.dependencies.sessionService.rotateRefreshToken(refreshToken);
+    public async refreshSession(refreshToken: string): Promise<AuthSessionBundle> {
+        const session: SessionRecord = await this.dependencies.sessionService.rotateRefreshToken(refreshToken as string);
         const accessToken = this.dependencies.tokenService.issueAccessToken({
             subject: session.userId,
             roles: session.roles,
@@ -122,11 +134,23 @@ export class AuthService {
             tokenVersion: session.tokenVersion,
         });
 
+        const claims = this.dependencies.tokenService.verifyAccessToken(accessToken);
+
+        // persist new access token jti if backed by DB
+        if (typeof (this.dependencies.sessionService as any).updateAccessTokenJti === 'function') {
+            // fire-and-forget: update jti if implementation supports it
+            try {
+                await (this.dependencies.sessionService as any).updateAccessTokenJti(session.sessionId, claims.jti);
+            } catch (error) {
+                // ignore jti persistence errors to avoid breaking refresh flow
+            }
+        }
+
         return {
             sessionId: session.sessionId,
             refreshToken: session.refreshToken,
             accessToken,
-            claims: this.dependencies.tokenService.verifyAccessToken(accessToken),
+            claims,
             accessContext: new AccessContext({
                 userId: session.userId,
                 roles: session.roles,

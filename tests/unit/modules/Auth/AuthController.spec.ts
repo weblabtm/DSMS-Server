@@ -101,7 +101,7 @@ describe('AuthController', () => {
         });
     });
 
-    it('logs out through the service and returns no content', () => {
+    it('logs out through the service and returns no content', async () => {
         const authService = {
             login: vi.fn(),
             register: vi.fn(),
@@ -115,7 +115,7 @@ describe('AuthController', () => {
             send: vi.fn(),
         };
 
-        controller.logout({ body: { refreshToken: 'refresh-1' } } as never, response as never);
+        await controller.logout({ body: { refreshToken: 'refresh-1' } } as never, response as never);
 
         expect(authService.logout).toHaveBeenCalledWith({ refreshToken: 'refresh-1' });
         expect(response.status).toHaveBeenCalledWith(204);

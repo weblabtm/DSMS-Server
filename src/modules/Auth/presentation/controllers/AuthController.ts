@@ -31,10 +31,9 @@ export class AuthController {
         response.status(200).json(this.toLoginResponseDto(session));
     }
 
-    public logout(request: Request, response: Response): void {
+    public async logout(request: Request, response: Response): Promise<void> {
         const dto = this.toLogoutRequestDto(request.body);
-        this.authService.logout(dto);
-
+        await this.authService.logout(dto as never);
         response.status(204).send();
     }
 

@@ -5,7 +5,7 @@ import { SessionService } from '../../../../src/modules/Auth/application/service
 import { TokenService } from '../../../../src/modules/Auth/application/services/TokenService.js';
 
 describe('AuthService', () => {
-    it('issues and refreshes auth sessions', () => {
+    it('issues and refreshes auth sessions', async () => {
         const tokenService = new TokenService('test-secret', { clock: () => 1_700_000_000 });
         const sessionService = new SessionService({ clock: () => 1_700_000_000 });
         const authDao = {
@@ -14,7 +14,7 @@ describe('AuthService', () => {
         };
         const authService = new AuthService({ tokenService, sessionService, authDao: authDao as never });
 
-        const session = authService.issueSession({
+        const session = await authService.issueSession({
             userId: 'user-1',
             roles: ['Tenant Admin'],
             tenantId: 'tenant-1',
@@ -25,7 +25,7 @@ describe('AuthService', () => {
         expect(session.refreshToken).toBeTruthy();
         expect(session.claims.sub).toBe('user-1');
 
-        const refreshedSession = authService.refreshSession(session.refreshToken);
+        const refreshedSession = await authService.refreshSession(session.refreshToken);
 
         expect(refreshedSession.sessionId).toBe(session.sessionId);
         expect(refreshedSession.refreshToken).not.toBe(session.refreshToken);
@@ -63,7 +63,7 @@ describe('AuthService', () => {
         expect(session.accessToken).toBeTruthy();
     });
 
-    it('logs out by revoking the matching session', () => {
+    it('logs out by revoking the matching session', async () => {
         const tokenService = new TokenService('test-secret', { clock: () => 1_700_000_000 });
         const sessionService = new SessionService({ clock: () => 1_700_000_000 });
         const authDao = {
@@ -72,13 +72,13 @@ describe('AuthService', () => {
         };
         const authService = new AuthService({ tokenService, sessionService, authDao: authDao as never });
 
-        const session = authService.issueSession({
+        const session = await authService.issueSession({
             userId: 'user-1',
             roles: ['Tenant Admin'],
         });
 
-        authService.logout({ refreshToken: session.refreshToken });
+        await authService.logout({ refreshToken: session.refreshToken });
 
-        expect(sessionService.findByRefreshToken(session.refreshToken)).toBeUndefined();
+        expect(await sessionService.findByRefreshToken(session.refreshToken)).toBeUndefined();
     });
 });

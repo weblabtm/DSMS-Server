@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-import app from './app.js';
+import { ServerApplication } from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
 import { DatabaseConnection } from './infrastructure/database/database-connection.js';
 import { RedisConnection } from './infrastructure/redis/redis-connection.js';
@@ -23,6 +23,19 @@ class ServerBootstrap {
             this.databaseConnection.connect(),
             this.redisConnection.connect(),
         ]);
+
+        // Seed RBAC matrix if database is available
+        const prisma = this.databaseConnection.getClient();
+        if (prisma) {
+            try {
+                const { PrismaRoleMatrixSeeder } = await import('./modules/Auth/infrastructure/PrismaRoleMatrixSeeder.js');
+                const seeder = new PrismaRoleMatrixSeeder(prisma as any);
+                await seeder.seed();
+                console.log('RBAC role matrix seeded');
+            } catch (error) {
+                console.error('RBAC seeding failed:', error instanceof Error ? error.message : String(error));
+            }
+        }
 
         this.httpServer = this.application.listen(this.port, () => {
             console.log(`Server running on http://localhost:${this.port}`);
@@ -87,8 +100,11 @@ const dependencyHealthProvider: DependencyHealthProvider = async () => {
     };
 };
 
-app.locals.dependencyHealthProvider = dependencyHealthProvider;
-const server = new ServerBootstrap(app, environment.port, databaseConnection, redisConnection);
+const appInstance = new ServerApplication(environment, databaseConnection.getClient());
+
+appInstance.getApp().locals.dependencyHealthProvider = dependencyHealthProvider;
+
+const server = new ServerBootstrap(appInstance.getApp(), environment.port, databaseConnection, redisConnection);
 
 server.start().catch((error: unknown) => {
     console.error('Failed to start server:', error);

@@ -4,8 +4,11 @@ import { EnvironmentConfig } from './config/environment.js';
 import { AuthController } from './modules/Auth/presentation/controllers/AuthController.js';
 import { AuthService } from './modules/Auth/application/services/AuthService.js';
 import { SessionService } from './modules/Auth/application/services/SessionService.js';
+import { PrismaSessionService } from './modules/Auth/infrastructure/PrismaSessionService.js';
 import { TokenService } from './modules/Auth/application/services/TokenService.js';
 import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
+import { PrismaAuthDao } from './modules/Auth/infrastructure/PrismaAuthDao.js';
+import type { PrismaClient } from './generated/prisma/client.js';
 
 type ServiceHealth = {
     status: 'connected' | 'disconnected';
@@ -26,12 +29,13 @@ export class ServerApplication {
 
     private readonly authController: AuthController;
 
-    public constructor(private readonly environment: EnvironmentConfig) {
+    public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
         this.app = express();
         this.allowedOrigins = new Set(environment.allowedOrigins);
-        const authDao = new InMemoryAuthDao();
+
+        const authDao = prismaClient ? new PrismaAuthDao(prismaClient) : new InMemoryAuthDao();
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
-        const sessionService = new SessionService();
+        const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
 
@@ -128,7 +132,3 @@ export class ServerApplication {
         });
     }
 }
-
-const serverApplication = new ServerApplication(EnvironmentConfig.fromProcessEnv());
-
-export default serverApplication.getApp();

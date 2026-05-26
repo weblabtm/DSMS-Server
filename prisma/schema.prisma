@@ -90,3 +90,18 @@ model AuthSession {
   @@index([userId])
   @@index([tenantId, branchId])
 }
+
+// Lightweight AuthUser model for authentication storage. In production, you
+// may already have a Users table elsewhere; adapt accordingly.
+model AuthUser {
+  id         String   @id @default(cuid())
+  identifier String   @unique
+  password   String
+  tenantId   String?
+  branchId   String?
+  roles      String[] @default([])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, branchId])
+}

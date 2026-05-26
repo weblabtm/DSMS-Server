@@ -2,7 +2,7 @@
  * In-memory session lifecycle manager used by the Auth module.
  * It owns refresh-token creation, rotation, and revocation semantics.
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 import { type RoleName } from '../../domain/Role.js';
 
@@ -16,6 +16,10 @@ export type SessionRecord = {
     branchId?: string;
     tokenVersion: number;
     refreshToken: string;
+    // optional token identifier for the access token (jti)
+    accessTokenJti?: string;
+    // optional stored hash of the refresh token for persistent stores
+    refreshTokenHash?: string;
     createdAt: number;
     expiresAt: number;
     revokedAt?: number;
@@ -27,6 +31,10 @@ export type CreateSessionInput = {
     tenantId?: string;
     branchId?: string;
     tokenVersion?: number;
+};
+
+export type CreateSessionWithAccessJtiInput = CreateSessionInput & {
+    accessTokenJti: string;
 };
 
 export type SessionServiceOptions = {
@@ -48,7 +56,7 @@ export class SessionService {
         this.refreshTokenTtlSeconds = options.refreshTokenTtlSeconds ?? 60 * 60 * 24 * 30;
     }
 
-    public createSession(input: CreateSessionInput): SessionRecord {
+    public async createSession(input: CreateSessionInput): Promise<SessionRecord> {
         const session: SessionRecord = {
             sessionId: randomUUID(),
             userId: input.userId,
@@ -57,6 +65,7 @@ export class SessionService {
             branchId: input.branchId,
             tokenVersion: input.tokenVersion ?? 0,
             refreshToken: randomUUID(),
+            refreshTokenHash: this.hashToken(randomUUID()),
             createdAt: this.clock(),
             expiresAt: this.clock() + this.refreshTokenTtlSeconds,
         };
@@ -67,7 +76,29 @@ export class SessionService {
         return { ...session };
     }
 
-    public findByRefreshToken(refreshToken: string): SessionRecord | undefined {
+    public async createSessionWithAccessJti(input: CreateSessionWithAccessJtiInput): Promise<SessionRecord> {
+        const refreshToken = randomUUID();
+        const session: SessionRecord = {
+            sessionId: randomUUID(),
+            userId: input.userId,
+            roles: [...(input.roles ?? [])],
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            tokenVersion: input.tokenVersion ?? 0,
+            refreshToken,
+            refreshTokenHash: this.hashToken(refreshToken),
+            accessTokenJti: input.accessTokenJti,
+            createdAt: this.clock(),
+            expiresAt: this.clock() + this.refreshTokenTtlSeconds,
+        };
+
+        this.sessionsById.set(session.sessionId, session);
+        this.sessionIdsByRefreshToken.set(session.refreshToken, session.sessionId);
+
+        return { ...session };
+    }
+
+    public async findByRefreshToken(refreshToken: string): Promise<SessionRecord | undefined> {
         const sessionId = this.sessionIdsByRefreshToken.get(refreshToken);
 
         if (!sessionId) {
@@ -83,8 +114,8 @@ export class SessionService {
         return { ...session };
     }
 
-    public rotateRefreshToken(refreshToken: string): SessionRecord {
-        const currentSession = this.findByRefreshToken(refreshToken);
+    public async rotateRefreshToken(refreshToken: string): Promise<SessionRecord> {
+        const currentSession = await this.findByRefreshToken(refreshToken);
 
         if (!currentSession) {
             throw new Error('Refresh token is not active');
@@ -98,9 +129,11 @@ export class SessionService {
 
         this.sessionIdsByRefreshToken.delete(refreshToken);
 
+        const newRefresh = randomUUID();
         const rotatedSession: SessionRecord = {
             ...existingRecord,
-            refreshToken: randomUUID(),
+            refreshToken: newRefresh,
+            refreshTokenHash: this.hashToken(newRefresh),
             createdAt: existingRecord.createdAt,
             expiresAt: this.clock() + this.refreshTokenTtlSeconds,
         };
@@ -111,7 +144,17 @@ export class SessionService {
         return { ...rotatedSession };
     }
 
-    public revokeSession(sessionId: string): void {
+    public async updateAccessTokenJti(sessionId: string, accessTokenJti: string): Promise<void> {
+        const session = this.sessionsById.get(sessionId);
+
+        if (!session) {
+            throw new Error('Session not found');
+        }
+
+        this.sessionsById.set(sessionId, { ...session, accessTokenJti });
+    }
+
+    public async revokeSession(sessionId: string): Promise<void> {
         const session = this.sessionsById.get(sessionId);
 
         if (!session) {
@@ -123,5 +166,9 @@ export class SessionService {
             ...session,
             revokedAt: this.clock(),
         });
+    }
+
+    private hashToken(token: string): string {
+        return createHash('sha256').update(token).digest('hex');
     }
 }
