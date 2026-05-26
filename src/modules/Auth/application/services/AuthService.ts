@@ -5,7 +5,7 @@
 import { AccessContext } from '../../domain/AccessContext.js';
 import { type RoleName } from '../../domain/Role.js';
 import { type AuthDao } from '../dao/AuthDao.js';
-import { type AuthLoginRequestDto, type AuthRefreshRequestDto, type AuthSessionResponseDto } from '../dtos/AuthDtos.js';
+import { type AuthLoginRequestDto, type AuthLogoutRequestDto, type AuthRefreshRequestDto, type AuthRegisterRequestDto, type AuthSessionResponseDto } from '../dtos/AuthDtos.js';
 import { PermissionGuard } from '../PermissionGuard.js';
 import { SessionService, type SessionRecord } from './SessionService.js';
 import { TokenService, type AccessTokenClaims } from './TokenService.js';
@@ -88,6 +88,28 @@ export class AuthService {
 
     public async refresh(request: AuthRefreshRequestDto): Promise<AuthSessionResponseDto> {
         return this.toSessionResponse(this.refreshSession(request.refreshToken));
+    }
+
+    public async register(account: AuthRegisterRequestDto): Promise<AuthSessionResponseDto> {
+        const principal = await this.dependencies.authDao.register(account);
+
+        return this.toSessionResponse(this.issueSession({
+            userId: principal.userId,
+            roles: principal.roles,
+            tenantId: principal.tenantId,
+            branchId: principal.branchId,
+            tokenVersion: principal.tokenVersion,
+        }));
+    }
+
+    public logout(request: AuthLogoutRequestDto): void {
+        const session = this.dependencies.sessionService.findByRefreshToken(request.refreshToken);
+
+        if (!session) {
+            return;
+        }
+
+        this.dependencies.sessionService.revokeSession(session.sessionId);
     }
 
     public refreshSession(refreshToken: string): AuthSessionBundle {

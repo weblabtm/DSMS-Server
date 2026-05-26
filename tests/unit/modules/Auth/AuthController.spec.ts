@@ -5,6 +5,7 @@ import { AuthController } from '../../../../src/modules/Auth/presentation/contro
 describe('AuthController', () => {
     it('maps login request and response DTOs through the service', async () => {
         const authService = {
+            register: vi.fn(),
             login: vi.fn().mockResolvedValue({
                 sessionId: 'session-1',
                 refreshToken: 'refresh-1',
@@ -40,6 +41,7 @@ describe('AuthController', () => {
 
     it('maps refresh request dto through the service', async () => {
         const authService = {
+            register: vi.fn(),
             login: vi.fn(),
             refresh: vi.fn().mockResolvedValue({
                 sessionId: 'session-2',
@@ -60,5 +62,63 @@ describe('AuthController', () => {
 
         expect(authService.refresh).toHaveBeenCalledWith({ refreshToken: 'refresh-1' });
         expect(response.status).toHaveBeenCalledWith(200);
+    });
+
+    it('maps register request and returns created session data', async () => {
+        const authService = {
+            login: vi.fn(),
+            register: vi.fn().mockResolvedValue({
+                sessionId: 'session-3',
+                refreshToken: 'refresh-3',
+                accessToken: 'access-3',
+                userId: 'user-2',
+                roles: ['Student'],
+                tenantId: 'tenant-1',
+                branchId: 'branch-1',
+            }),
+            refresh: vi.fn(),
+            logout: vi.fn(),
+        };
+
+        const controller = new AuthController(authService as never);
+        const response = {
+            status: vi.fn().mockReturnThis(),
+            json: vi.fn(),
+        };
+
+        await controller.register({ body: { identifier: 'student@example.com', password: 'secret' } } as never, response as never);
+
+        expect(authService.register).toHaveBeenCalledWith({ identifier: 'student@example.com', password: 'secret' });
+        expect(response.status).toHaveBeenCalledWith(201);
+        expect(response.json).toHaveBeenCalledWith({
+            sessionId: 'session-3',
+            refreshToken: 'refresh-3',
+            accessToken: 'access-3',
+            userId: 'user-2',
+            roles: ['Student'],
+            tenantId: 'tenant-1',
+            branchId: 'branch-1',
+        });
+    });
+
+    it('logs out through the service and returns no content', () => {
+        const authService = {
+            login: vi.fn(),
+            register: vi.fn(),
+            refresh: vi.fn(),
+            logout: vi.fn(),
+        };
+
+        const controller = new AuthController(authService as never);
+        const response = {
+            status: vi.fn().mockReturnThis(),
+            send: vi.fn(),
+        };
+
+        controller.logout({ body: { refreshToken: 'refresh-1' } } as never, response as never);
+
+        expect(authService.logout).toHaveBeenCalledWith({ refreshToken: 'refresh-1' });
+        expect(response.status).toHaveBeenCalledWith(204);
+        expect(response.send).toHaveBeenCalledTimes(1);
     });
 });

@@ -11,7 +11,18 @@ export type AuthLoginRequestDto = {
     branchId?: string;
 };
 
+export type AuthRegisterRequestDto = {
+    identifier: string;
+    password: string;
+    tenantId?: string;
+    branchId?: string;
+};
+
 export type AuthRefreshRequestDto = {
+    refreshToken: string;
+};
+
+export type AuthLogoutRequestDto = {
     refreshToken: string;
 };
 
@@ -34,3 +45,5 @@ export type AuthSessionResponseDto = {
 };
 
 export type AuthLoginResponseDto = AuthSessionResponseDto;
+
+export type AuthRegisterResponseDto = AuthSessionResponseDto;

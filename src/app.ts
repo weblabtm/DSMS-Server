@@ -1,6 +1,11 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 
 import { EnvironmentConfig } from './config/environment.js';
+import { AuthController } from './modules/Auth/presentation/controllers/AuthController.js';
+import { AuthService } from './modules/Auth/application/services/AuthService.js';
+import { SessionService } from './modules/Auth/application/services/SessionService.js';
+import { TokenService } from './modules/Auth/application/services/TokenService.js';
+import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
 
 type ServiceHealth = {
     status: 'connected' | 'disconnected';
@@ -19,9 +24,16 @@ export class ServerApplication {
 
     private readonly allowedOrigins: Set<string>;
 
+    private readonly authController: AuthController;
+
     public constructor(private readonly environment: EnvironmentConfig) {
         this.app = express();
         this.allowedOrigins = new Set(environment.allowedOrigins);
+        const authDao = new InMemoryAuthDao();
+        const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
+        const sessionService = new SessionService();
+        const authService = new AuthService({ tokenService, sessionService, authDao });
+        this.authController = new AuthController(authService);
 
         this.registerMiddleware();
         this.registerRoutes();
@@ -40,6 +52,10 @@ export class ServerApplication {
 
     private registerRoutes(): void {
         this.app.get('/health', this.healthCheckHandler);
+        this.app.post('/auth/register', this.authController.register.bind(this.authController));
+        this.app.post('/auth/login', this.authController.login.bind(this.authController));
+        this.app.post('/auth/refresh', this.authController.refresh.bind(this.authController));
+        this.app.post('/auth/logout', this.authController.logout.bind(this.authController));
     }
 
     private registerNotFoundHandler(): void {

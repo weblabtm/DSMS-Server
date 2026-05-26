@@ -1,10 +1,10 @@
 /**
- * HTTP controller for login and token refresh.
+ * HTTP controller for authentication endpoints.
  * It only translates requests to DTOs and returns the service response as JSON.
  */
 import type { Request, Response } from 'express';
 
-import { type AuthLoginRequestDto, type AuthRefreshRequestDto, type AuthLoginResponseDto } from '../../application/dtos/AuthDtos.js';
+import { type AuthLoginRequestDto, type AuthLogoutRequestDto, type AuthRefreshRequestDto, type AuthRegisterRequestDto, type AuthLoginResponseDto, type AuthRegisterResponseDto } from '../../application/dtos/AuthDtos.js';
 import { AuthService } from '../../application/services/AuthService.js';
 
 export class AuthController {
@@ -17,11 +17,25 @@ export class AuthController {
         response.status(200).json(this.toLoginResponseDto(session));
     }
 
+    public async register(request: Request, response: Response): Promise<void> {
+        const dto = this.toRegisterRequestDto(request.body);
+        const session = await this.authService.register(dto);
+
+        response.status(201).json(this.toRegisterResponseDto(session));
+    }
+
     public async refresh(request: Request, response: Response): Promise<void> {
         const dto = this.toRefreshRequestDto(request.body);
         const session = await this.authService.refresh(dto);
 
         response.status(200).json(this.toLoginResponseDto(session));
+    }
+
+    public logout(request: Request, response: Response): void {
+        const dto = this.toLogoutRequestDto(request.body);
+        this.authService.logout(dto);
+
+        response.status(204).send();
     }
 
     private toLoginRequestDto(body: unknown): AuthLoginRequestDto {
@@ -43,6 +57,25 @@ export class AuthController {
         };
     }
 
+    private toRegisterRequestDto(body: unknown): AuthRegisterRequestDto {
+        const payload = body as Partial<AuthRegisterRequestDto>;
+
+        return {
+            identifier: String(payload.identifier ?? ''),
+            password: String(payload.password ?? ''),
+            ...(payload.tenantId ? { tenantId: String(payload.tenantId) } : {}),
+            ...(payload.branchId ? { branchId: String(payload.branchId) } : {}),
+        };
+    }
+
+    private toLogoutRequestDto(body: unknown): AuthLogoutRequestDto {
+        const payload = body as Partial<AuthLogoutRequestDto>;
+
+        return {
+            refreshToken: String(payload.refreshToken ?? ''),
+        };
+    }
+
     private toLoginResponseDto(session: AuthLoginResponseDto): AuthLoginResponseDto {
         return {
             sessionId: session.sessionId,
@@ -53,5 +86,9 @@ export class AuthController {
             ...(session.tenantId ? { tenantId: session.tenantId } : {}),
             ...(session.branchId ? { branchId: session.branchId } : {}),
         };
+    }
+
+    private toRegisterResponseDto(session: AuthRegisterResponseDto): AuthRegisterResponseDto {
+        return this.toLoginResponseDto(session);
     }
 }
