@@ -10,6 +10,25 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: dsms
+          POSTGRES_PASSWORD: dsms
+          POSTGRES_DB: dsms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dsms"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,6 +53,26 @@ jobs:
 
       - name: Vercel build
         run: npm run vercel-build
+
+      - name: Build Prisma schema & generate client
+        run: |
+          npm run prisma:build-schema
+          npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Apply migrations (deploy)
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Run seeders (if needed)
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms
+        run: |
+          if [ -f dist/scripts/seed-rbac.js ]; then
+            node dist/scripts/seed-rbac.js
+          else
+            npx tsx src/scripts/seed-rbac.ts
+          fi
 
       - name: Run tests
         env:
