@@ -1,0 +1,10 @@
+// Prisma schema header: generator and datasource
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

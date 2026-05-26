@@ -1,0 +1,6 @@
+enum PermissionScope {
+  global
+  tenant
+  branch
+  own
+}

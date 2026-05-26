@@ -1,0 +1,52 @@
+name: Migrate and Seed Database
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: migrate-seed
+  cancel-in-progress: false
+
+jobs:
+  migrate-seed:
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Prisma schema
+        run: npm run prisma:build-schema
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Build project
+        run: npm run build
+
+      - name: Deploy migrations
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Run RBAC seeder (compiled)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -f dist/scripts/seed-rbac.js ]; then
+            node dist/scripts/seed-rbac.js
+          else
+            npx tsx src/scripts/seed-rbac.ts
+          fi

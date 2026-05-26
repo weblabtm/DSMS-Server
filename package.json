@@ -5,12 +5,15 @@
   "scripts": {
     "dev": "nodemon --watch src --ext ts,json --exec tsx src/server.ts",
     "build": "tsc",
-    "vercel-build": "npx prisma generate && npm run build",
+    "vercel-build": "npm run prisma:generate && npm run build",
     "start": "node dist/server.js",
     "test": "vitest",
     "test:ci": "vitest run",
     "seed:rbac": "tsx src/scripts/seed-rbac.ts",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "prisma:build-schema": "node scripts/build-prisma-schema.js",
+    "prisma:generate": "npm run prisma:build-schema && prisma generate --schema=prisma/schema.prisma",
+    "prisma:migrate:dev": "npm run prisma:build-schema && prisma migrate dev --schema=prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
