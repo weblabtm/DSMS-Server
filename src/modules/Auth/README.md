@@ -26,7 +26,7 @@ Handles login, token issuance, permission checks, and access control workflows.
 	- `application/` — services (`AuthService`, `SessionService`, `TokenService`), DTOs, guards
 	- `domain/` — permission, role and user value objects
 	- `infrastructure/` — DAOs (Prisma/InMemory), session store, seeders
-	- `presentation/` — controllers and routes
+	- `presentation/` — controllers, routes and route registrars
 	- `prisma/` — Prisma models for Auth (module-local `prisma/*.prisma`)
 
 - **Prisma usage:**
@@ -40,4 +40,7 @@ Handles login, token issuance, permission checks, and access control workflows.
 	- Keep controllers thin; apply guards via middleware.
 
 - **Seeding:** Use `src/scripts/seed-rbac.ts` (idempotent upserts) and run via CI.
+
+**Routes:**
+- Module routes are declared under `src/modules/Auth/presentation/routes/` and mounted at the base path `/auth` by the application. Controllers include per-method route comments indicating the HTTP verb and path.
 
