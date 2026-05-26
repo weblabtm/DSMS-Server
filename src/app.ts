@@ -9,6 +9,10 @@ import { TokenService } from './modules/Auth/application/services/TokenService.j
 import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
 import { PrismaAuthDao } from './modules/Auth/infrastructure/PrismaAuthDao.js';
 import { createAuthRouter } from './modules/Auth/presentation/routes/authRoutes.js';
+import { createTenantRouter } from './modules/Tenant/presentation/routes/tenantRoutes.js';
+import { InMemoryTenantDao } from './modules/Tenant/infrastructure/InMemoryTenantDao.js';
+import { TenantService } from './modules/Tenant/application/services/TenantService.js';
+import { TenantController } from './modules/Tenant/presentation/controllers/TenantController.js';
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
 
@@ -30,6 +34,7 @@ export class ServerApplication {
     private readonly allowedOrigins: Set<string>;
 
     private readonly authController: AuthController;
+    private readonly tenantController: TenantController;
 
     public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
         this.app = express();
@@ -40,6 +45,11 @@ export class ServerApplication {
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
+
+        // tenant module
+        const tenantDao = new InMemoryTenantDao();
+        const tenantService = new TenantService(tenantDao, authService);
+        this.tenantController = new TenantController(tenantService);
 
         this.registerMiddleware();
         this.registerRoutes();
@@ -62,6 +72,9 @@ export class ServerApplication {
 
         const authRouter = createAuthRouter(this.authController);
         this.app.use('/auth', authRouter);
+
+        const tenantRouter = createTenantRouter(this.tenantController);
+        this.app.use('/tenant', tenantRouter);
     }
 
     private registerDocumentation(): void {

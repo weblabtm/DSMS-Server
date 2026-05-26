@@ -16,6 +16,7 @@ export type AuthRegisterRequestDto = {
     password: string;
     tenantId?: string;
     branchId?: string;
+    roles?: RoleName[];
 };
 
 export type AuthRefreshRequestDto = {
