@@ -9,6 +9,7 @@ import { TokenService } from './modules/Auth/application/services/TokenService.j
 import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
 import { PrismaAuthDao } from './modules/Auth/infrastructure/PrismaAuthDao.js';
 import type { PrismaClient } from './generated/prisma/client.js';
+import { registerSwaggerDocs } from './docs/swagger.js';
 
 type ServiceHealth = {
     status: 'connected' | 'disconnected';
@@ -41,6 +42,7 @@ export class ServerApplication {
 
         this.registerMiddleware();
         this.registerRoutes();
+        this.registerDocumentation();
         this.registerNotFoundHandler();
     }
 
@@ -60,6 +62,14 @@ export class ServerApplication {
         this.app.post('/auth/login', this.authController.login.bind(this.authController));
         this.app.post('/auth/refresh', this.authController.refresh.bind(this.authController));
         this.app.post('/auth/logout', this.authController.logout.bind(this.authController));
+    }
+
+    private registerDocumentation(): void {
+        if (!this.environment.enableSwaggerDocs) {
+            return;
+        }
+
+        registerSwaggerDocs(this.app);
     }
 
     private registerNotFoundHandler(): void {

@@ -26,12 +26,15 @@ export class EnvironmentConfig {
 
     public readonly redisUrl: string;
 
+    public readonly enableSwaggerDocs: boolean;
+
     public constructor(env: NodeJS.ProcessEnv = process.env) {
         this.port = parsePort(env.PORT, 3000);
         this.allowedOrigins = parseList(env.ALLOWED_ORIGINS);
         this.authSecret = env.AUTH_SECRET ?? 'dev-secret';
         this.databaseUrl = env.DATABASE_URL ?? '';
         this.redisUrl = env.REDIS_URL ?? '';
+        this.enableSwaggerDocs = String(env.ENABLE_SWAGGER_DOCS ?? '').toLowerCase() === 'true';
     }
 
     public static fromProcessEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {
