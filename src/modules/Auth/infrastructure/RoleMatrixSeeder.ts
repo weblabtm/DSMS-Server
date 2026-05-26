@@ -4,6 +4,7 @@
  */
 import { PermissionCatalog } from '../application/PermissionCatalog.js';
 import { RoleMatrix } from '../application/RoleMatrix.js';
+import { type Permission } from '../domain/Permission.js';
 import { type RoleName } from '../domain/Role.js';
 import { RolePermission } from '../domain/RolePermission.js';
 
@@ -18,7 +19,7 @@ export type SeedRolePermission = {
 
 export type SeedSnapshot = {
     roles: SeedRole[];
-    permissions: string[];
+    permissions: Permission[];
     rolePermissions: SeedRolePermission[];
 };
 
@@ -40,7 +41,7 @@ export class RoleMatrixSeeder {
 
         const roles: SeedRole[] = roleNames.map((name) => ({ name }));
 
-        const permissions = this.permissionCatalog.all().map((permission) => permission.key);
+        const permissions = this.permissionCatalog.all();
         const rolePermissions = roles.flatMap((role) => this.roleMatrix.permissionsFor(role.name).map((permission) => new RolePermission(role.name, permission.key)));
 
         return {

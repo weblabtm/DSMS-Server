@@ -10,6 +10,10 @@ export const registerSwaggerDocs = (app: Express): void => {
         },
     }));
 
+    app.get('/docs', (_request, response) => {
+        response.redirect('/docs/');
+    });
+
     app.get('/openapi.json', (_request, response) => {
         response.json(openApiDocument);
     });

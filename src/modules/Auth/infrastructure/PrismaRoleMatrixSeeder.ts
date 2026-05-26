@@ -8,12 +8,20 @@ export class PrismaRoleMatrixSeeder {
         const snapshot = this.seeder.build();
 
         // Upsert permissions
-        for (const key of snapshot.permissions) {
-            const [moduleName, action, scope] = key.split(':');
+        for (const permission of snapshot.permissions) {
             await (this.prisma as any).permission.upsert({
-                where: { key },
-                update: {},
-                create: { key, moduleName, action, scope },
+                where: { key: permission.key },
+                update: {
+                    moduleName: permission.moduleName,
+                    action: permission.action,
+                    scope: permission.scope,
+                },
+                create: {
+                    key: permission.key,
+                    moduleName: permission.moduleName,
+                    action: permission.action,
+                    scope: permission.scope,
+                },
             });
         }
 

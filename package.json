@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --watch src --ext ts,json --exec tsx src/server.ts",
+    "dev": "nodemon --watch src --watch .env --ext ts,json,env --exec tsx src/server.ts",
     "build": "tsc",
     "vercel-build": "npm run prisma:generate && npm run build",
     "start": "node dist/server.js",

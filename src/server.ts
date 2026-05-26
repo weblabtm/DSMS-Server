@@ -14,6 +14,7 @@ class ServerBootstrap {
     public constructor(
         private readonly application: Express,
         private readonly port: number,
+        private readonly enableSwaggerDocs: boolean,
         private readonly databaseConnection: DatabaseConnection,
         private readonly redisConnection: RedisConnection,
     ) { }
@@ -39,6 +40,12 @@ class ServerBootstrap {
 
         this.httpServer = this.application.listen(this.port, () => {
             console.log(`Server running on http://localhost:${this.port}`);
+
+            if (this.enableSwaggerDocs) {
+                console.log(`Swagger docs available at http://localhost:${this.port}/docs`);
+            } else {
+                console.log('Swagger docs are disabled. Set ENABLE_SWAGGER_DOCS=true to enable /docs and /openapi.json.');
+            }
         });
 
         this.registerShutdownHooks();
@@ -104,7 +111,7 @@ const appInstance = new ServerApplication(environment, databaseConnection.getCli
 
 appInstance.getApp().locals.dependencyHealthProvider = dependencyHealthProvider;
 
-const server = new ServerBootstrap(appInstance.getApp(), environment.port, databaseConnection, redisConnection);
+const server = new ServerBootstrap(appInstance.getApp(), environment.port, environment.enableSwaggerDocs, databaseConnection, redisConnection);
 
 server.start().catch((error: unknown) => {
     console.error('Failed to start server:', error);
