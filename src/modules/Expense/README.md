@@ -15,3 +15,17 @@ Handles operational expense tracking, approvals, and spending workflows.
 - Keep all expense rules here.
 - Do not mix accounting logic from payroll into this module.
 - Use branch or tenant access rules as needed.
+
+**Module: Expense**
+
+- **Scope:** Expense submission, approvals, and recording for accounting purposes.
+
+- **Folder structure:**
+	- `application/` — expense workflows, approval orchestrators
+	- `domain/` — expense entities and validation rules
+	- `infrastructure/` — persistence and external accounting adapters
+	- `presentation/` — expense APIs
+	- `prisma/` — module Prisma models if required
+
+- **Guidance:** Use atomic transactions for approval state changes and ensure audit trails for approvals.
+
