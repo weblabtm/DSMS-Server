@@ -3,11 +3,38 @@
 This document explains the project's module conventions, folder structure, OOP and SOLID guidance, and how Prisma is used. It is intended for developers and coding agents working on this repository.
 
 1) Module layout (per `src/modules/<Module>`)
-- `application/` — services, use-cases, DTOs. Business logic lives here.
-- `domain/` — domain entities, value objects, and domain-only rules.
-- `infrastructure/` — persistence adapters (DAOs), external API adapters, seeders.
-- `presentation/` — HTTP controllers, middleware, and routes.
-- `prisma/` — module-local Prisma model files (one or multiple `.prisma` fragments).
+The repository follows a strict per-module layout. Every module should include the following folders (where applicable). This is intentionally prescriptive so other developers and automated agents have a consistent place to look.
+
+- `application/` — application services and use-cases. Business logic and orchestration live here. Also contains `dtos/` and `services/`.
+- `domain/` — domain entities, value objects, and domain-only rules (pure business logic without infra concerns).
+- `infrastructure/` — persistence adapters and implementations (DAOs), external API adapters, seeders, and database-specific code.
+- `presentation/` — HTTP surface. Must be split into at least:
+	- `controllers/` — thin controllers that translate HTTP → DTOs and call application services.
+	- `mappers/` (or `presenters/`) — responsible for request ↔ DTO and DTO ↔ response mapping (extracted mapping logic).
+	- `middleware/` — request guards, validation middleware, authentication checks.
+- `prisma/` — module-local Prisma model fragments (one or more `.prisma` files). These are included in the consolidated `prisma/schema.prisma` by the build script.
+
+Additional recommended folders (optional):
+- `application/dao/` — DAO interfaces used by services (interfaces only).
+- `infrastructure/dao/` — concrete DAO implementations (Prisma, in-memory) that implement the interfaces.
+
+Example minimal structure:
+
+src/modules/<Module>/
+	application/
+		dtos/
+		services/
+		dao/          <-- interfaces
+	domain/
+	infrastructure/
+		dao/          <-- implementations
+		prisma/
+	presentation/
+		controllers/
+		mappers/
+		middleware/
+
+This organization enforces separation of concerns: controllers handle HTTP, mappers handle shape conversion, application services contain business rules, DAOs abstract persistence, and infrastructure contains the concrete persistence code.
 
 2) Module scope
 - Each module owns a bounded context (e.g., `Auth` owns authentication and RBAC). Keep cross-cutting concerns minimal and prefer integration via service interfaces.
