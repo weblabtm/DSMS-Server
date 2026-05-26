@@ -6,33 +6,35 @@ import type { Request, Response } from 'express';
 
 import { type AuthLoginRequestDto, type AuthLogoutRequestDto, type AuthRefreshRequestDto, type AuthRegisterRequestDto, type AuthLoginResponseDto, type AuthRegisterResponseDto } from '../../application/dtos/AuthDtos.js';
 import { AuthService } from '../../application/services/AuthService.js';
+import { AuthRequestMapper } from '../mappers/AuthRequestMapper.js';
+import { AuthResponseMapper } from '../mappers/AuthResponseMapper.js';
 
 export class AuthController {
     public constructor(private readonly authService: AuthService) { }
 
     public async login(request: Request, response: Response): Promise<void> {
-        const dto = this.toLoginRequestDto(request.body);
+        const dto = AuthRequestMapper.toLoginRequestDto(request.body);
         const session = await this.authService.login(dto);
 
-        response.status(200).json(this.toLoginResponseDto(session));
+        response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
     }
 
     public async register(request: Request, response: Response): Promise<void> {
-        const dto = this.toRegisterRequestDto(request.body);
+        const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
         const session = await this.authService.register(dto);
 
-        response.status(201).json(this.toRegisterResponseDto(session));
+        response.status(201).json(AuthResponseMapper.toRegisterResponseDto(session));
     }
 
     public async refresh(request: Request, response: Response): Promise<void> {
-        const dto = this.toRefreshRequestDto(request.body);
+        const dto = AuthRequestMapper.toRefreshRequestDto(request.body);
         const session = await this.authService.refresh(dto);
 
-        response.status(200).json(this.toLoginResponseDto(session));
+        response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
     }
 
     public async logout(request: Request, response: Response): Promise<void> {
-        const dto = this.toLogoutRequestDto(request.body);
+        const dto = AuthRequestMapper.toLogoutRequestDto(request.body);
         await this.authService.logout(dto as never);
         response.status(204).send();
     }
@@ -74,20 +76,6 @@ export class AuthController {
             refreshToken: String(payload.refreshToken ?? ''),
         };
     }
-
-    private toLoginResponseDto(session: AuthLoginResponseDto): AuthLoginResponseDto {
-        return {
-            sessionId: session.sessionId,
-            refreshToken: session.refreshToken,
-            accessToken: session.accessToken,
-            userId: session.userId,
-            roles: [...session.roles],
-            ...(session.tenantId ? { tenantId: session.tenantId } : {}),
-            ...(session.branchId ? { branchId: session.branchId } : {}),
-        };
-    }
-
-    private toRegisterResponseDto(session: AuthRegisterResponseDto): AuthRegisterResponseDto {
-        return this.toLoginResponseDto(session);
-    }
+    // Request/response mapping moved to `presentation/mappers` to keep controller focused
+    // and adhere to SRP (see `AuthRequestMapper` and `AuthResponseMapper`).
 }
