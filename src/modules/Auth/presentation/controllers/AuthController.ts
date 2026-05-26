@@ -22,9 +22,19 @@ export class AuthController {
     // POST /auth/register
     public async register(request: Request, response: Response): Promise<void> {
         const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
-        const session = await this.authService.register(dto);
+        const inviterRole = request.authContext?.roles[0];
 
-        response.status(201).json(AuthResponseMapper.toRegisterResponseDto(session));
+        if (!inviterRole) {
+            response.status(401).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        try {
+            const session = await this.authService.register(dto, inviterRole);
+            response.status(201).json(AuthResponseMapper.toRegisterResponseDto(session));
+        } catch (error) {
+            response.status(400).json({ message: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     // POST /auth/refresh

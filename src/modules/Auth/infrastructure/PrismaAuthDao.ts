@@ -71,7 +71,7 @@ export class PrismaAuthDao implements AuthDao {
                 password: hashed,
                 ...(account.tenantId ? { tenantId: account.tenantId } : {}),
                 ...(account.branchId ? { branchId: account.branchId } : {}),
-                ...(account.roles ? { roles: account.roles } : {}),
+                ...(account.role ? { roles: [account.role] } : {}),
             },
         });
 

@@ -9,7 +9,9 @@ export const authOpenApi = {
         '/auth/register': {
             post: {
                 tags: ['Auth'],
-                summary: 'Register a new user',
+                summary: 'Register a new user (inviter-only)',
+                description: 'Creates a new user account. This endpoint requires an authenticated inviter; the server derives `tenantId` and `role` from the inviter context. Clients MUST NOT supply `role` or `tenantId`.',
+                security: [{ bearerAuth: [] }],
                 requestBody: {
                     required: true,
                     content: {
@@ -18,10 +20,9 @@ export const authOpenApi = {
                                 type: 'object',
                                 required: ['identifier', 'password'],
                                 properties: {
-                                    identifier: { type: 'string' },
-                                    password: { type: 'string' },
-                                    tenantId: { type: 'string', nullable: true },
-                                    branchId: { type: 'string', nullable: true },
+                                    identifier: { type: 'string', description: 'Email or username for the new account' },
+                                    password: { type: 'string', description: 'Plain-text password (will be hashed by server)' },
+                                    displayName: { type: 'string', nullable: true, description: 'Optional display name' },
                                 },
                             },
                         },
@@ -32,6 +33,8 @@ export const authOpenApi = {
                         description: 'User registered and session created',
                     },
                     400: { description: 'Invalid payload' },
+                    401: { description: 'Unauthorized - inviter required' },
+                    403: { description: 'Forbidden - inviter cannot create this role' },
                 },
             },
         },

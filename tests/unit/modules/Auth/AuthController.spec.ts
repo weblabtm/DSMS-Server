@@ -86,9 +86,9 @@ describe('AuthController', () => {
             json: vi.fn(),
         };
 
-        await controller.register({ body: { identifier: 'student@example.com', password: 'secret' } } as never, response as never);
+        await controller.register({ body: { identifier: 'student@example.com', password: 'secret', role: 'Student' }, authContext: { roles: ['Front Desk'] } } as never, response as never);
 
-        expect(authService.register).toHaveBeenCalledWith({ identifier: 'student@example.com', password: 'secret' });
+        expect(authService.register).toHaveBeenCalledWith({ identifier: 'student@example.com', password: 'secret', role: 'Student' }, 'Front Desk');
         expect(response.status).toHaveBeenCalledWith(201);
         expect(response.json).toHaveBeenCalledWith({
             sessionId: 'session-3',

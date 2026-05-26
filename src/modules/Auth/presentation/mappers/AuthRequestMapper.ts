@@ -28,6 +28,7 @@ export class AuthRequestMapper {
             password: String(payload.password ?? ''),
             ...(payload.tenantId ? { tenantId: String(payload.tenantId) } : {}),
             ...(payload.branchId ? { branchId: String(payload.branchId) } : {}),
+            ...(payload.role ? { role: payload.role } : {}),
         };
     }
 

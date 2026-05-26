@@ -9,6 +9,7 @@ import { TokenService } from './modules/Auth/application/services/TokenService.j
 import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
 import { PrismaAuthDao } from './modules/Auth/infrastructure/PrismaAuthDao.js';
 import { createAuthRouter } from './modules/Auth/presentation/routes/authRoutes.js';
+import { AuthenticationMiddleware } from './modules/Auth/application/middleware/AuthenticationMiddleware.js';
 import { createTenantRouter } from './modules/Tenant/presentation/routes/tenantRoutes.js';
 import { InMemoryTenantDao } from './modules/Tenant/infrastructure/InMemoryTenantDao.js';
 import { TenantService } from './modules/Tenant/application/services/TenantService.js';
@@ -35,6 +36,7 @@ export class ServerApplication {
 
     private readonly authController: AuthController;
     private readonly tenantController: TenantController;
+    private readonly authenticationMiddleware: AuthenticationMiddleware;
 
     public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
         this.app = express();
@@ -45,6 +47,7 @@ export class ServerApplication {
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
+        this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
 
         // tenant module
         const tenantDao = new InMemoryTenantDao();
@@ -70,11 +73,11 @@ export class ServerApplication {
     private registerRoutes(): void {
         this.app.get('/health', this.healthCheckHandler);
 
-        const authRouter = createAuthRouter(this.authController);
+        const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware);
         this.app.use('/auth', authRouter);
 
         const tenantRouter = createTenantRouter(this.tenantController);
-        this.app.use('/tenant', tenantRouter);
+        this.app.use('/tenant', this.authenticationMiddleware.handle.bind(this.authenticationMiddleware), tenantRouter);
     }
 
     private registerDocumentation(): void {

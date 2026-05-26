@@ -48,7 +48,7 @@ export class InMemoryAuthDao implements AuthDao {
             identifier: account.identifier,
             password: account.password,
             userId: `user-${this.usersByIdentifier.size + 1}`,
-            roles: (account as any).roles ?? ['Student'],
+            roles: [account.role ?? 'Student'],
             ...(account.tenantId ? { tenantId: account.tenantId } : {}),
             ...(account.branchId ? { branchId: account.branchId } : {}),
         };

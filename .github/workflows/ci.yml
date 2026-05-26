@@ -74,11 +74,17 @@ jobs:
             npx tsx src/scripts/seed-rbac.ts
           fi
 
-      - name: Run tests
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
         env:
           DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms
           REDIS_URL: redis://127.0.0.1:6379
-        run: npm run test:ci
+        run: npm run test:integration
+
+      - name: Run e2e tests
+        run: npm run test:e2e
 
   build:
     name: Build server

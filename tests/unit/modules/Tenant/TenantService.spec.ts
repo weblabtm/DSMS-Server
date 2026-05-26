@@ -9,7 +9,7 @@ describe('TenantService', () => {
 
     beforeEach(() => {
         tenantDao = new InMemoryTenantDao();
-        mockAuthService = { register: vi.fn(async (input: any) => ({ userId: 'u1', roles: input.roles ?? ['Tenant Admin'], tenantId: input.tenantId })) };
+        mockAuthService = { register: vi.fn(async (input: any) => ({ userId: 'u1', roles: [input.role ?? 'Tenant Admin'], tenantId: input.tenantId })) };
         tenantService = new TenantService(tenantDao as any, mockAuthService as any);
     });
 
@@ -24,7 +24,7 @@ describe('TenantService', () => {
         const call = mockAuthService.register.mock.calls[0][0];
         expect(call.identifier).toBe('admin@acme');
         expect(call.tenantId).toBe(result.id);
-        expect(call.roles).toContain('Tenant Admin');
+        expect(call.role).toBe('Tenant Admin');
     });
 
     it('updates tenant to deactivate', async () => {

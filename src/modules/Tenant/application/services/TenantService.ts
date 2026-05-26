@@ -21,7 +21,7 @@ export class TenantService {
             const created = await (this.prismaClient as any).tenant.create({ data: { id, name: input.name, isActive: true } });
 
             // create initial tenant admin account
-            await this.authService.register({ identifier: input.adminAccount.identifier, password: input.adminAccount.password, tenantId: id, roles: ['Tenant Admin'] } as any);
+            await this.authService.register({ identifier: input.adminAccount.identifier, password: input.adminAccount.password, tenantId: id, role: 'Tenant Admin' } as any, 'Super Admin');
 
             return {
                 id: created.id,
@@ -39,8 +39,8 @@ export class TenantService {
             identifier: input.adminAccount.identifier,
             password: input.adminAccount.password,
             tenantId: id,
-            roles: ['Tenant Admin'],
-        } as any);
+            role: 'Tenant Admin',
+        } as any, 'Super Admin');
 
         return tenant;
     }

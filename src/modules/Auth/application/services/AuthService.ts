@@ -100,7 +100,13 @@ export class AuthService {
         return this.toSessionResponse(await this.refreshSession(request.refreshToken));
     }
 
-    public async register(account: AuthRegisterRequestDto): Promise<AuthSessionResponseDto> {
+    public async register(account: AuthRegisterRequestDto, inviterRole: RoleName): Promise<AuthSessionResponseDto> {
+        const targetRole = account.role ?? 'Student';
+
+        if (!this.canInviteRole(inviterRole, targetRole)) {
+            throw new Error(`Role ${inviterRole} cannot create ${targetRole}`);
+        }
+
         const principal = await this.dependencies.authDao.register(account);
 
         return this.toSessionResponse(await this.issueSession({
@@ -163,6 +169,21 @@ export class AuthService {
 
     public assertPermission(roleName: RoleName, permissionKey: string): void {
         this.permissionGuard.assertCan(roleName, permissionKey);
+    }
+
+    public canInviteRole(inviterRole: RoleName, targetRole: RoleName): boolean {
+        switch (inviterRole) {
+            case 'Super Admin':
+                return targetRole === 'Tenant Admin';
+            case 'Tenant Admin':
+                return ['Branch Manager', 'Instructor', 'Front Desk', 'Student'].includes(targetRole);
+            case 'Branch Manager':
+                return ['Instructor', 'Front Desk', 'Student'].includes(targetRole);
+            case 'Front Desk':
+                return targetRole === 'Student';
+            default:
+                return false;
+        }
     }
 
     private toSessionResponse(bundle: AuthSessionBundle): AuthSessionResponseDto {

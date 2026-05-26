@@ -50,17 +50,35 @@ describe('AuthService', () => {
             password: 'secret',
             tenantId: 'tenant-1',
             branchId: 'branch-1',
-        });
+            role: 'Student',
+        }, 'Front Desk');
 
         expect(authDao.register).toHaveBeenCalledWith({
             identifier: 'student@example.com',
             password: 'secret',
             tenantId: 'tenant-1',
             branchId: 'branch-1',
+            role: 'Student',
         });
         expect(session.userId).toBe('user-2');
         expect(session.roles).toEqual(['Student']);
         expect(session.accessToken).toBeTruthy();
+    });
+
+    it('rejects registration without an inviter role', async () => {
+        const tokenService = new TokenService('test-secret', { clock: () => 1_700_000_000 });
+        const sessionService = new SessionService({ clock: () => 1_700_000_000 });
+        const authDao = {
+            authenticate: vi.fn(),
+            register: vi.fn(),
+        };
+        const authService = new AuthService({ tokenService, sessionService, authDao: authDao as never });
+
+        await expect(authService.register({
+            identifier: 'student@example.com',
+            password: 'secret',
+            role: 'Student',
+        } as never, 'Student')).rejects.toThrow('Role Student cannot create Student');
     });
 
     it('logs out by revoking the matching session', async () => {

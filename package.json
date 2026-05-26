@@ -8,9 +8,11 @@
     "vercel-build": "npm run prisma:generate && npm run build",
     "start": "node dist/server.js",
     "test": "vitest",
-    "test:ci": "vitest run",
-    "seed:rbac": "tsx src/scripts/seed-rbac.ts",
+    "test:unit": "vitest run tests/unit tests/example.test.ts",
     "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "seed:rbac": "tsx src/scripts/seed-rbac.ts",
     "prisma:build-schema": "node scripts/build-prisma-schema.js",
     "prisma:generate": "npm run prisma:build-schema && prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate:dev": "npm run prisma:build-schema && prisma migrate dev --schema=prisma/schema.prisma"

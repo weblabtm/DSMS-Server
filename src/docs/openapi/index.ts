@@ -1,4 +1,5 @@
 import { authOpenApi } from '../../modules/Auth/docs/openapi.js';
+import { tenantOpenApi } from '../../modules/Tenant/docs/openapi.js';
 import { healthOpenApi } from './health.js';
 import { mergeOpenApiDocuments } from './merge.js';
 
@@ -27,4 +28,5 @@ export const openApiDocument = mergeOpenApiDocuments(
     },
     healthOpenApi,
     authOpenApi,
+    tenantOpenApi,
 );
