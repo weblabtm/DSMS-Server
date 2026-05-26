@@ -48,7 +48,7 @@ export class ServerApplication {
 
         // tenant module
         const tenantDao = new InMemoryTenantDao();
-        const tenantService = new TenantService(tenantDao, authService);
+        const tenantService = new TenantService(tenantDao as any, authService, prismaClient ?? undefined);
         this.tenantController = new TenantController(tenantService);
 
         this.registerMiddleware();
