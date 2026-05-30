@@ -14,6 +14,7 @@
     "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "seed:rbac": "tsx src/scripts/seed-rbac.ts",
     "seed:super-admin": "tsx src/scripts/bootstrap-super-admin.ts",
+    "check:supabase-direct": "tsx src/scripts/check-supabase-direct.ts",
     "prisma:build-schema": "node scripts/build-prisma-schema.js",
     "prisma:generate": "npm run prisma:build-schema && prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate:dev": "npm run prisma:build-schema && prisma migrate dev --schema=prisma/schema.prisma",

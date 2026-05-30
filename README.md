@@ -23,3 +23,11 @@ Use the one-time bootstrap script to provision the first `Super Admin` account w
 2. Run `npm run seed:super-admin`.
 
 The script is idempotent. If the same identifier already has the `Super Admin` role, it exits successfully.
+
+## Supabase Connectivity Check
+
+Use this script to verify that a direct Supabase database URL is reachable before running migrations.
+
+1. Pass the direct URI as an argument, or set `SUPABASE_DATABASE_URL`.
+2. Run `npm run check:supabase-direct -- "postgresql://<user>:<password>@<host>:5432/<database>?schema=public"`.
+3. The script runs `SELECT 1` and exits with a non-zero code if the connection fails.
