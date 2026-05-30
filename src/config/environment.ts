@@ -15,6 +15,14 @@ const parsePort = (value: string | undefined, fallback: number): number => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const parseBoolean = (value: string | undefined, fallback = false): boolean => {
+    if (value === undefined) {
+        return fallback;
+    }
+
+    return String(value).trim().toLowerCase() === 'true';
+};
+
 export class EnvironmentConfig {
     public readonly port: number;
 
@@ -26,6 +34,22 @@ export class EnvironmentConfig {
 
     public readonly redisUrl: string;
 
+    public readonly minioEndpoint: string;
+
+    public readonly minioPort: number;
+
+    public readonly minioUseSSL: boolean;
+
+    public readonly minioAccessKey: string;
+
+    public readonly minioSecretKey: string;
+
+    public readonly minioBucket: string;
+
+    public readonly minioRegion: string;
+
+    public readonly minioBucketPolicy: 'private' | 'public-read';
+
     public readonly enableSwaggerDocs: boolean;
 
     public constructor(env: NodeJS.ProcessEnv = process.env) {
@@ -34,6 +58,14 @@ export class EnvironmentConfig {
         this.authSecret = env.AUTH_SECRET ?? 'dev-secret';
         this.databaseUrl = env.DATABASE_URL ?? '';
         this.redisUrl = env.REDIS_URL ?? '';
+        this.minioEndpoint = env.MINIO_ENDPOINT ?? '';
+        this.minioPort = parsePort(env.MINIO_PORT, 9000);
+        this.minioUseSSL = parseBoolean(env.MINIO_USE_SSL, false);
+        this.minioAccessKey = env.MINIO_ACCESS_KEY ?? '';
+        this.minioSecretKey = env.MINIO_SECRET_KEY ?? '';
+        this.minioBucket = env.MINIO_BUCKET ?? '';
+        this.minioRegion = env.MINIO_REGION ?? 'us-east-1';
+        this.minioBucketPolicy = env.MINIO_BUCKET_POLICY === 'public-read' ? 'public-read' : 'private';
         this.enableSwaggerDocs = String(env.ENABLE_SWAGGER_DOCS ?? '').toLowerCase() === 'true';
     }
 

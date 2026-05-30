@@ -44,6 +44,26 @@ load_env() {
     set -a
     . "$ENV_FILE"
     set +a
+    export POSTGRES_DB="${POSTGRES_DB:-dsms}"
+    export POSTGRES_USER="${POSTGRES_USER:-dsms}"
+    export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-dsms}"
+    export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+    export REDIS_PORT="${REDIS_PORT:-6379}"
+    export PORT="${PORT:-3000}"
+    export NODE_ENV="${NODE_ENV:-development}"
+    export MINIO_PORT="${MINIO_PORT:-9000}"
+    export MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
+    export MINIO_USE_SSL="${MINIO_USE_SSL:-false}"
+    export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+    export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+    export MINIO_BUCKET="${MINIO_BUCKET:-dsms-files}"
+    export MINIO_REGION="${MINIO_REGION:-us-east-1}"
+    export MINIO_BUCKET_POLICY="${MINIO_BUCKET_POLICY:-private}"
+    export DOCKER_DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
+    export DOCKER_REDIS_URL="redis://redis:6379"
+    export DOCKER_MINIO_ENDPOINT="minio"
+    export DOCKER_MINIO_PORT="9000"
+    export DOCKER_MINIO_USE_SSL="false"
 }
 
 require_docker() {
@@ -58,7 +78,7 @@ compose() {
 }
 
 start_infra() {
-    compose up -d --wait postgres redis
+    compose up -d --wait postgres redis minio minio-init
 }
 
 run_server() {
@@ -96,7 +116,7 @@ case "${1:-dev}" in
         require_env
         require_docker
         load_env
-        compose logs -f postgres redis
+            compose logs -f postgres redis minio minio-init
         ;;
     status|ps)
         require_env

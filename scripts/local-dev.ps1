@@ -55,6 +55,27 @@ function Import-EnvironmentFile {
             }
         }
     }
+
+    $env:POSTGRES_DB = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_DB)) { 'dsms' } else { $env:POSTGRES_DB }
+    $env:POSTGRES_USER = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_USER)) { 'dsms' } else { $env:POSTGRES_USER }
+    $env:POSTGRES_PASSWORD = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) { 'dsms' } else { $env:POSTGRES_PASSWORD }
+    $env:POSTGRES_PORT = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_PORT)) { '5432' } else { $env:POSTGRES_PORT }
+    $env:REDIS_PORT = if ([string]::IsNullOrWhiteSpace($env:REDIS_PORT)) { '6379' } else { $env:REDIS_PORT }
+    $env:PORT = if ([string]::IsNullOrWhiteSpace($env:PORT)) { '3000' } else { $env:PORT }
+    $env:NODE_ENV = if ([string]::IsNullOrWhiteSpace($env:NODE_ENV)) { 'development' } else { $env:NODE_ENV }
+    $env:MINIO_PORT = if ([string]::IsNullOrWhiteSpace($env:MINIO_PORT)) { '9000' } else { $env:MINIO_PORT }
+    $env:MINIO_CONSOLE_PORT = if ([string]::IsNullOrWhiteSpace($env:MINIO_CONSOLE_PORT)) { '9001' } else { $env:MINIO_CONSOLE_PORT }
+    $env:MINIO_USE_SSL = if ([string]::IsNullOrWhiteSpace($env:MINIO_USE_SSL)) { 'false' } else { $env:MINIO_USE_SSL }
+    $env:MINIO_ACCESS_KEY = if ([string]::IsNullOrWhiteSpace($env:MINIO_ACCESS_KEY)) { 'minioadmin' } else { $env:MINIO_ACCESS_KEY }
+    $env:MINIO_SECRET_KEY = if ([string]::IsNullOrWhiteSpace($env:MINIO_SECRET_KEY)) { 'minioadmin' } else { $env:MINIO_SECRET_KEY }
+    $env:MINIO_BUCKET = if ([string]::IsNullOrWhiteSpace($env:MINIO_BUCKET)) { 'dsms-files' } else { $env:MINIO_BUCKET }
+    $env:MINIO_REGION = if ([string]::IsNullOrWhiteSpace($env:MINIO_REGION)) { 'us-east-1' } else { $env:MINIO_REGION }
+    $env:MINIO_BUCKET_POLICY = if ([string]::IsNullOrWhiteSpace($env:MINIO_BUCKET_POLICY)) { 'private' } else { $env:MINIO_BUCKET_POLICY }
+    $env:DOCKER_DATABASE_URL = "postgresql://$($env:POSTGRES_USER):$($env:POSTGRES_PASSWORD)@postgres:5432/$($env:POSTGRES_DB)?schema=public"
+    $env:DOCKER_REDIS_URL = 'redis://redis:6379'
+    $env:DOCKER_MINIO_ENDPOINT = 'minio'
+    $env:DOCKER_MINIO_PORT = '9000'
+    $env:DOCKER_MINIO_USE_SSL = 'false'
 }
 
 function Invoke-Compose {
@@ -66,13 +87,14 @@ function Invoke-Compose {
     Push-Location $ProjectRoot
     try {
         & docker compose -f $ComposeFile @Arguments
-    } finally {
+    }
+    finally {
         Pop-Location
     }
 }
 
 function Start-Infrastructure {
-    Invoke-Compose up -d --wait postgres redis
+    Invoke-Compose up -d --wait postgres redis minio minio-init
 }
 
 Assert-Dependencies
@@ -88,7 +110,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npm run dev
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
@@ -98,7 +121,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npm run dev
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
@@ -118,6 +142,7 @@ switch ($Command) {
     }
     'logs' {
         Invoke-Compose logs -f postgres redis
+        Invoke-Compose logs -f postgres redis minio minio-init
         break
     }
     'status' { Invoke-Compose ps; break }
@@ -137,7 +162,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npx prisma generate
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
@@ -146,7 +172,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npx prisma migrate dev
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
@@ -155,7 +182,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npx prisma studio
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
@@ -164,7 +192,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npm run build
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
@@ -173,7 +202,8 @@ switch ($Command) {
         Push-Location $ProjectRoot
         try {
             npm test
-        } finally {
+        }
+        finally {
             Pop-Location
         }
         break
