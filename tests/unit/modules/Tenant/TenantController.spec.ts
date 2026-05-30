@@ -16,7 +16,7 @@ describe('TenantController', () => {
             json: vi.fn(),
         };
 
-        await controller.create({ body: { name: 'School 1', adminAccount: { identifier: 'admin@school', password: 'secret' } }, authContext: { isSuperAdmin: () => false } } as never, response as never);
+        await controller.create({ body: { name: 'School 1', tenantAdminIdentifier: 'admin@school' }, authContext: { isSuperAdmin: () => false, hasRole: () => false } } as never, response as never);
 
         expect(tenantService.createTenant).not.toHaveBeenCalled();
         expect(response.status).toHaveBeenCalledWith(403);
@@ -35,11 +35,11 @@ describe('TenantController', () => {
             json: vi.fn(),
         };
 
-        await controller.create({ body: { name: 'School 1', adminAccount: { identifier: 'admin@school', password: 'secret' } }, authContext: { isSuperAdmin: () => true } } as never, response as never);
+        await controller.create({ body: { name: 'School 1', tenantAdminIdentifier: 'admin@school' }, authContext: { isSuperAdmin: () => true, hasRole: () => false } } as never, response as never);
 
         expect(tenantService.createTenant).toHaveBeenCalledWith({
             name: 'School 1',
-            adminAccount: { identifier: 'admin@school', password: 'secret' },
+            tenantAdminIdentifier: 'admin@school',
         });
         expect(response.status).toHaveBeenCalledWith(201);
     });
