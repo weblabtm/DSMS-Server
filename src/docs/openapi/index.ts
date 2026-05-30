@@ -13,7 +13,7 @@ export const openApiDocument = mergeOpenApiDocuments(
         },
         servers: [
             {
-                url: 'http://localhost:3000',
+                url: '/',
             },
         ],
         components: {
