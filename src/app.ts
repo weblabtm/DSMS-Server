@@ -14,6 +14,7 @@ import { createTenantRouter } from './modules/Tenant/presentation/routes/tenantR
 import { InMemoryTenantDao } from './modules/Tenant/infrastructure/InMemoryTenantDao.js';
 import { TenantService } from './modules/Tenant/application/services/TenantService.js';
 import { TenantController } from './modules/Tenant/presentation/controllers/TenantController.js';
+import { TenantRoutingMiddleware } from './modules/Tenant/presentation/middleware/TenantRoutingMiddleware.js';
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
 
@@ -36,6 +37,7 @@ export class ServerApplication {
 
     private readonly authController: AuthController;
     private readonly tenantController: TenantController;
+    private readonly tenantRoutingMiddleware: TenantRoutingMiddleware;
     private readonly authenticationMiddleware: AuthenticationMiddleware;
 
     public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
@@ -47,6 +49,7 @@ export class ServerApplication {
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
+        this.tenantRoutingMiddleware = new TenantRoutingMiddleware();
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
 
         // tenant module
@@ -68,6 +71,7 @@ export class ServerApplication {
     private registerMiddleware(): void {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
+        this.app.use(this.tenantRoutingMiddleware.handle.bind(this.tenantRoutingMiddleware));
         this.app.use(this.createCorsMiddleware());
     }
 
@@ -78,6 +82,8 @@ export class ServerApplication {
                 message: 'Server is live',
             });
         });
+
+        this.app.get('/config', this.clientConfigHandler.bind(this));
 
         this.app.get('/health', this.healthCheckHandler);
 
@@ -162,6 +168,16 @@ export class ServerApplication {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    private clientConfigHandler(request: Request, response: Response): void {
+        const tenantContext = request.tenantContext;
+
+        response.status(200).json({
+            apiBaseUrl: tenantContext?.apiBaseUrl ?? `${request.protocol}://${request.get('host') ?? 'localhost'}`,
+            tenantSlug: tenantContext?.tenantSlug ?? null,
+            hostname: tenantContext?.hostname ?? request.hostname,
+        });
     }
 
     private notFoundHandler(_request: Request, response: Response): void {
