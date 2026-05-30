@@ -1,6 +1,12 @@
 # DSMS-Server
 Driving School Management System server codebase
 
+## Infrastructure Docs
+
+- [Database infrastructure](src/infrastructure/database/README.md)
+- [Redis infrastructure](src/infrastructure/redis/README.md)
+- [Storage infrastructure](src/infrastructure/storage/README.md)
+
 ## Local development
 
 1. The repo includes a local `.env` and a matching `.env.example` for PostgreSQL, Redis, MinIO, `PORT`, and `ALLOWED_ORIGINS`.
@@ -14,7 +20,7 @@ Driving School Management System server codebase
 
 ## MinIO Storage
 
-The server now includes reusable MinIO utilities for bucket initialization, uploads, downloads, and public object URLs.
+The server now includes reusable MinIO utilities for bucket initialization, uploads, downloads, and public object URLs. See the full usage guide in [src/infrastructure/storage/README.md](src/infrastructure/storage/README.md).
 
 1. Configure `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`, and `MINIO_BUCKET_POLICY`.
 2. Set `MINIO_BUCKET_POLICY=public-read` only if anonymous reads are intended. Private buckets keep downloads behind signed URLs or authenticated server access.
