@@ -71,6 +71,13 @@ export class ServerApplication {
     }
 
     private registerRoutes(): void {
+        this.app.get('/', (_request, response) => {
+            response.status(200).json({
+                status: 'ok',
+                message: 'Server is live',
+            });
+        });
+
         this.app.get('/health', this.healthCheckHandler);
 
         const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware);
