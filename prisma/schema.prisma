@@ -1,7 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Prisma schema header: generator and datasource
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +7,122 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+
+// ===== src\modules\Auth\prisma\AuthSession.prisma =====
+model AuthSession {
+  id              String   @id @default(cuid())
+  userId          String
+  accessTokenJti  String   @unique
+  refreshTokenHash String   @unique
+  tokenVersion    Int      @default(0)
+  tenantId        String?
+  branchId        String?
+  revokedAt       DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tenantId, branchId])
+}
+
+
+// ===== src\modules\Auth\prisma\AuthUser.prisma =====
+// Lightweight AuthUser model for authentication storage. In production, you
+// may already have a Users table elsewhere; adapt accordingly.
+model AuthUser {
+  id         String   @id @default(cuid())
+  identifier String   @unique
+  password   String
+  tenantId   String?
+  branchId   String?
+  roles      String[] @default([])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, branchId])
+}
+
+
+// ===== src\modules\Auth\prisma\Permission.prisma =====
+model Permission {
+  id         String           @id @default(cuid())
+  key        String           @unique
+  moduleName String
+  action     String
+  scope      PermissionScope
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([moduleName, action])
+}
+
+
+// ===== src\modules\Auth\prisma\Role.prisma =====
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  isSystem    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+}
+
+
+// ===== src\modules\Auth\prisma\RolePermission.prisma =====
+model RolePermission {
+  id           String      @id @default(cuid())
+  roleId       String
+  permissionId String
+  tenantId     String?
+  branchId     String?
+  createdAt    DateTime    @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId, tenantId, branchId])
+  @@index([tenantId, branchId])
+}
+
+
+// ===== src\modules\Auth\prisma\UserRole.prisma =====
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  tenantId  String?
+  branchId  String?
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, tenantId, branchId])
+  @@index([userId, tenantId, branchId])
+}
+
+
+// ===== src\modules\Auth\prisma\enums.prisma =====
+enum PermissionScope {
+  global
+  tenant
+  branch
+  own
+}
+
+
+// ===== src\modules\Tenant\prisma\Tenant.prisma =====
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
