@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createAuthHttpFixtures, createTenantHttpFixtures } from '../fixtures/http-fixtures.js';
+import { createTenantHttpFixtures } from '../fixtures/http-fixtures.js';
 
 const shouldRun = Boolean(process.env.DATABASE_URL);
 const maybe = shouldRun ? it : it.skip;
@@ -17,12 +17,13 @@ describe('Tenant integration (DB-backed)', () => {
         const { InMemoryTenantDao } = await import('../../src/modules/Tenant/infrastructure/InMemoryTenantDao.js');
         const { TenantService } = await import('../../src/modules/Tenant/application/services/TenantService.js');
 
-        const fixtures = createTenantHttpFixtures('tenant-integration');
-        const authFixtures = createAuthHttpFixtures('tenant-integration');
+        const fixtures = createTenantHttpFixtures(`tenant-integration-${Date.now()}`);
 
         const env = EnvironmentConfig.fromProcessEnv();
         const db = new DatabaseConnection(env.databaseUrl);
         await db.connect();
+
+        let createdTenantId: string | undefined;
 
         try {
             const prisma = db.getClient();
@@ -37,15 +38,21 @@ describe('Tenant integration (DB-backed)', () => {
             const sessionService = new PrismaSessionService(prisma as any);
             const tokenService = new TokenService('integration-secret');
             const authService = new AuthService({ tokenService, sessionService, authDao } as never);
-            const tenantService = new TenantService(new InMemoryTenantDao() as never, authService, prisma as never);
+
+            await authService.register({
+                identifier: fixtures.tenantAdmin.identifier,
+                password: fixtures.tenantAdmin.password,
+                role: 'Tenant Admin',
+            });
+
+            const tenantService = new TenantService(new InMemoryTenantDao() as never, prisma as never);
 
             const tenant = await tenantService.createTenant({
                 name: fixtures.createTenant.name,
-                adminAccount: {
-                    identifier: authFixtures.registration.identifier,
-                    password: authFixtures.registration.password,
-                },
+                tenantAdminIdentifier: fixtures.tenantAdmin.identifier,
             });
+
+            createdTenantId = tenant.id;
 
             expect(tenant.name).toBe(fixtures.createTenant.name);
             expect(tenant.isActive).toBe(true);
@@ -53,10 +60,25 @@ describe('Tenant integration (DB-backed)', () => {
             const storedTenant = await (prisma as any).tenant.findUnique({ where: { id: tenant.id } });
             expect(storedTenant).toBeDefined();
 
-            const storedAdmin = await (prisma as any).authUser.findUnique({ where: { identifier: authFixtures.registration.identifier } });
+            const storedAdmin = await (prisma as any).authUser.findUnique({ where: { identifier: fixtures.tenantAdmin.identifier } });
             expect(storedAdmin).toBeDefined();
             expect(storedAdmin.roles).toContain('Tenant Admin');
+            expect(storedAdmin.tenantId).toBe(tenant.id);
         } finally {
+            const prisma = db.getClient();
+            if (prisma) {
+                const user = await (prisma as any).authUser.findUnique({ where: { identifier: fixtures.tenantAdmin.identifier } });
+                if (user?.id) {
+                    await (prisma as any).authSession.deleteMany({ where: { userId: user.id } });
+                }
+
+                if (createdTenantId) {
+                    await (prisma as any).tenant.deleteMany({ where: { id: createdTenantId } });
+                }
+
+                await (prisma as any).authUser.deleteMany({ where: { identifier: fixtures.tenantAdmin.identifier } });
+            }
+
             await db.disconnect();
         }
     });

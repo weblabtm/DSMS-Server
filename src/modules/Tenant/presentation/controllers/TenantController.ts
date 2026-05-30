@@ -5,27 +5,30 @@ import type { CreateTenantRequestDto, UpdateTenantRequestDto } from '../../appli
 export class TenantController {
     public constructor(private readonly tenantService: TenantService) { }
 
-    // POST /tenant/  - create tenant (requires adminAccount in body)
+    // POST /tenant/  - create tenant (requires existing tenant admin identifier)
     public async create(request: Request, response: Response): Promise<void> {
         const body = request.body as CreateTenantRequestDto;
         const authContext = request.authContext;
 
-        if (!authContext?.isSuperAdmin()) {
-            response.status(403).json({ message: 'Only Super Admin can create tenants' });
+        if (!authContext || (!authContext.isSuperAdmin() && !authContext.hasRole('Tenant Admin'))) {
+            response.status(403).json({ message: 'Only Super Admin or Tenant Admin can create tenants' });
             return;
         }
 
-        if (!body?.name || !body?.adminAccount?.identifier || !body?.adminAccount?.password) {
-            response.status(400).json({ message: 'Missing required fields: name and adminAccount (identifier,password)' });
+        if (!body?.name || !body?.tenantAdminIdentifier) {
+            response.status(400).json({ message: 'Missing required fields: name and tenantAdminIdentifier' });
             return;
         }
 
         try {
-            const tenant = await this.tenantService.createTenant({ name: String(body.name), adminAccount: { identifier: String(body.adminAccount.identifier), password: String(body.adminAccount.password) } });
+            const tenant = await this.tenantService.createTenant({
+                name: String(body.name),
+                tenantAdminIdentifier: String(body.tenantAdminIdentifier),
+            });
 
             response.status(201).json(tenant);
         } catch (error) {
-            response.status(500).json({ message: error instanceof Error ? error.message : String(error) });
+            response.status(400).json({ message: error instanceof Error ? error.message : String(error) });
         }
     }
 

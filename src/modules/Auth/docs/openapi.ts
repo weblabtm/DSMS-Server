@@ -9,9 +9,9 @@ export const authOpenApi = {
         '/auth/register': {
             post: {
                 tags: ['Auth'],
-                summary: 'Register a new user (inviter-only)',
-                description: 'Creates a new user account. This endpoint requires an authenticated inviter; the server derives `tenantId` and `role` from the inviter context. Clients MUST NOT supply `role` or `tenantId`.',
-                security: [{ bearerAuth: [] }],
+                summary: 'Register a new user',
+                description: 'Creates a new user account. Self-registration is allowed only for `Tenant Admin` and must include `role: Tenant Admin`. All other roles require an authenticated inviter token.',
+                security: [{}, { bearerAuth: [] }],
                 requestBody: {
                     required: true,
                     content: {
@@ -22,7 +22,34 @@ export const authOpenApi = {
                                 properties: {
                                     identifier: { type: 'string', description: 'Email or username for the new account' },
                                     password: { type: 'string', description: 'Plain-text password (will be hashed by server)' },
-                                    displayName: { type: 'string', nullable: true, description: 'Optional display name' },
+                                    role: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: ['Super Admin', 'Tenant Admin', 'Branch Manager', 'Instructor', 'Front Desk', 'Student'],
+                                        description: 'Required as `Tenant Admin` for self-registration. For inviter flows, this is validated against inviter policy.',
+                                    },
+                                    tenantId: { type: 'string', nullable: true, description: 'Optional at registration time. Typically assigned when a tenant is created and linked to this Tenant Admin account.' },
+                                    branchId: { type: 'string', nullable: true, description: 'Optional branch scope for roles that support branch-level access.' },
+                                },
+                            },
+                            examples: {
+                                tenantAdminSelfRegistration: {
+                                    summary: 'Tenant Admin self-registration (no token)',
+                                    value: {
+                                        identifier: 'admin@acme.com',
+                                        password: 'StrongPass123!',
+                                        role: 'Tenant Admin',
+                                    },
+                                },
+                                invitedUserRegistration: {
+                                    summary: 'Inviter-based registration (requires bearer token)',
+                                    value: {
+                                        identifier: 'frontdesk@acme.com',
+                                        password: 'StrongPass123!',
+                                        role: 'Front Desk',
+                                        tenantId: 'tenant-123',
+                                        branchId: 'branch-001',
+                                    },
                                 },
                             },
                         },
@@ -33,8 +60,8 @@ export const authOpenApi = {
                         description: 'User registered and session created',
                     },
                     400: { description: 'Invalid payload' },
-                    401: { description: 'Unauthorized - inviter required' },
-                    403: { description: 'Forbidden - inviter cannot create this role' },
+                    401: { description: 'Unauthorized - invalid token if Authorization header is provided' },
+                    403: { description: 'Forbidden - self-registration denied for this role or inviter cannot create this role' },
                 },
             },
         },
@@ -42,6 +69,7 @@ export const authOpenApi = {
             post: {
                 tags: ['Auth'],
                 summary: 'Login and create a session',
+                description: 'Authenticates a user and returns session tokens. `tenantId` and `branchId` are optional context filters and are not required for `Super Admin` login.',
                 requestBody: {
                     required: true,
                     content: {
@@ -50,10 +78,27 @@ export const authOpenApi = {
                                 type: 'object',
                                 required: ['identifier', 'password'],
                                 properties: {
-                                    identifier: { type: 'string' },
-                                    password: { type: 'string' },
-                                    tenantId: { type: 'string', nullable: true },
-                                    branchId: { type: 'string', nullable: true },
+                                    identifier: { type: 'string', description: 'Email or username.' },
+                                    password: { type: 'string', description: 'Account password.' },
+                                    tenantId: { type: 'string', nullable: true, description: 'Optional tenant context filter. Not required for Super Admin.' },
+                                    branchId: { type: 'string', nullable: true, description: 'Optional branch context filter. Not required for Super Admin.' },
+                                },
+                            },
+                            examples: {
+                                superAdminLogin: {
+                                    summary: 'Super Admin login',
+                                    value: {
+                                        identifier: 'superadmin@email.com',
+                                        password: 'your-password',
+                                    },
+                                },
+                                tenantScopedLogin: {
+                                    summary: 'Tenant-scoped login (optional context)',
+                                    value: {
+                                        identifier: 'tenantadmin@acme.com',
+                                        password: 'your-password',
+                                        tenantId: 'tenant-123',
+                                    },
                                 },
                             },
                         },

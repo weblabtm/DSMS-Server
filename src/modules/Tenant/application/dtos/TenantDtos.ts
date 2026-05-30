@@ -1,9 +1,6 @@
 export type CreateTenantRequestDto = {
     name: string;
-    adminAccount: {
-        identifier: string;
-        password: string;
-    };
+    tenantAdminIdentifier: string;
 };
 
 export type TenantResponseDto = {

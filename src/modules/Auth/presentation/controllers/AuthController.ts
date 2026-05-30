@@ -24,16 +24,19 @@ export class AuthController {
         const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
         const inviterRole = request.authContext?.roles[0];
 
-        if (!inviterRole) {
-            response.status(401).json({ message: 'Unauthorized' });
-            return;
-        }
-
         try {
             const session = await this.authService.register(dto, inviterRole);
             response.status(201).json(AuthResponseMapper.toRegisterResponseDto(session));
         } catch (error) {
-            response.status(400).json({ message: error instanceof Error ? error.message : String(error) });
+            const message = error instanceof Error ? error.message : String(error);
+            const status =
+                message.includes('cannot create')
+                    || message.includes('self-register')
+                    || message.includes('Only Tenant Admin')
+                    ? 403
+                    : 400;
+
+            response.status(status).json({ message });
         }
     }
 

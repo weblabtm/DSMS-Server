@@ -10,7 +10,7 @@ export const tenantOpenApi = {
             post: {
                 tags: ['Tenant'],
                 summary: 'Create a tenant',
-                description: 'Creates a new tenant. Requires Super Admin. The request must include minimal tenant data and an initial admin account.',
+                description: 'Creates a new tenant. Requires Super Admin or Tenant Admin. The request must include minimal tenant data and an existing `Tenant Admin` account identifier. The server links that account to the newly created tenant.',
                 security: [{ bearerAuth: [] }],
                 requestBody: {
                     required: true,
@@ -18,16 +18,21 @@ export const tenantOpenApi = {
                         'application/json': {
                             schema: {
                                 type: 'object',
-                                required: ['name', 'adminAccount'],
+                                required: ['name', 'tenantAdminIdentifier'],
                                 properties: {
                                     name: { type: 'string' },
-                                    adminAccount: {
-                                        type: 'object',
-                                        required: ['identifier', 'password'],
-                                        properties: {
-                                            identifier: { type: 'string' },
-                                            password: { type: 'string' },
-                                        },
+                                    tenantAdminIdentifier: {
+                                        type: 'string',
+                                        description: 'Identifier of an existing account with role `Tenant Admin` that is not yet assigned to a tenant.',
+                                    },
+                                },
+                            },
+                            examples: {
+                                createTenantWithExistingAdmin: {
+                                    summary: 'Create tenant and attach existing Tenant Admin',
+                                    value: {
+                                        name: 'Acme Academy',
+                                        tenantAdminIdentifier: 'admin@acme.com',
                                     },
                                 },
                             },
@@ -38,7 +43,7 @@ export const tenantOpenApi = {
                     201: { description: 'Tenant created' },
                     400: { description: 'Invalid payload' },
                     401: { description: 'Unauthorized' },
-                    403: { description: 'Forbidden' },
+                    403: { description: 'Forbidden - only Super Admin or Tenant Admin can create tenants' },
                 },
             },
             get: {

@@ -1,27 +1,52 @@
 import { randomUUID } from 'crypto';
 import type { TenantDao } from '../dao/TenantDao.js';
-import type { AuthService } from '../../../Auth/application/services/AuthService.js';
 import type { PrismaClient } from '../../../../generated/prisma/client.js';
 
 export type CreateTenantInput = {
     name: string;
-    adminAccount: {
-        identifier: string;
-        password: string;
-    };
+    tenantAdminIdentifier: string;
 };
 
 export class TenantService {
-    public constructor(private readonly tenantDao: TenantDao, private readonly authService: AuthService, private readonly prismaClient?: PrismaClient) { }
+    public constructor(private readonly tenantDao: TenantDao, private readonly prismaClient?: PrismaClient) { }
+
+    private getTenantDelegate(): any {
+        const delegate = (this.prismaClient as any)?.tenant;
+
+        if (!delegate) {
+            throw new Error('Tenant model is not available in Prisma client. Run npm run prisma:generate and restart the server.');
+        }
+
+        return delegate;
+    }
 
     public async createTenant(input: CreateTenantInput) {
         const id = `tenant-${randomUUID()}`;
 
         if (this.prismaClient) {
-            const created = await (this.prismaClient as any).tenant.create({ data: { id, name: input.name, isActive: true } });
+            const tenantDelegate = this.getTenantDelegate();
+            const tenantAdmin = await (this.prismaClient as any).authUser.findUnique({
+                where: { identifier: input.tenantAdminIdentifier },
+            });
 
-            // create initial tenant admin account
-            await this.authService.register({ identifier: input.adminAccount.identifier, password: input.adminAccount.password, tenantId: id, role: 'Tenant Admin' } as any, 'Super Admin');
+            if (!tenantAdmin) {
+                throw new Error('Tenant Admin account not found');
+            }
+
+            if (!(tenantAdmin.roles ?? []).includes('Tenant Admin')) {
+                throw new Error('Provided account is not a Tenant Admin');
+            }
+
+            if (tenantAdmin.tenantId) {
+                throw new Error('Tenant Admin account is already assigned to a tenant');
+            }
+
+            const created = await tenantDelegate.create({ data: { id, name: input.name, isActive: true } });
+
+            await (this.prismaClient as any).authUser.update({
+                where: { id: tenantAdmin.id },
+                data: { tenantId: id },
+            });
 
             return {
                 id: created.id,
@@ -32,22 +57,13 @@ export class TenantService {
             };
         }
 
-        const tenant = await this.tenantDao.create({ id, name: input.name, isActive: true });
-
-        // create initial tenant admin account
-        await this.authService.register({
-            identifier: input.adminAccount.identifier,
-            password: input.adminAccount.password,
-            tenantId: id,
-            role: 'Tenant Admin',
-        } as any, 'Super Admin');
-
-        return tenant;
+        throw new Error('Tenant creation requires a database-backed Tenant Admin account lookup');
     }
 
     public async getTenant(id: string) {
         if (this.prismaClient) {
-            const found = await (this.prismaClient as any).tenant.findUnique({ where: { id } });
+            const tenantDelegate = this.getTenantDelegate();
+            const found = await tenantDelegate.findUnique({ where: { id } });
 
             if (!found) return null;
 
@@ -69,7 +85,8 @@ export class TenantService {
 
     public async listTenants() {
         if (this.prismaClient) {
-            const rows = await (this.prismaClient as any).tenant.findMany();
+            const tenantDelegate = this.getTenantDelegate();
+            const rows = await tenantDelegate.findMany();
             return rows.map((r: any) => ({ id: r.id, name: r.name, isActive: r.isActive, createdAt: new Date(r.createdAt as string), updatedAt: new Date(r.updatedAt as string) }));
         }
 
@@ -79,7 +96,8 @@ export class TenantService {
     public async updateTenant(id: string, patch: { name?: string; isActive?: boolean }) {
         // tenants cannot be deleted; allow name change and deactivate/reactivate
         if (this.prismaClient) {
-            const updated = await (this.prismaClient as any).tenant.update({ where: { id }, data: { ...(patch.name ? { name: patch.name } : {}), ...(typeof patch.isActive === 'boolean' ? { isActive: patch.isActive } : {}) } });
+            const tenantDelegate = this.getTenantDelegate();
+            const updated = await tenantDelegate.update({ where: { id }, data: { ...(patch.name ? { name: patch.name } : {}), ...(typeof patch.isActive === 'boolean' ? { isActive: patch.isActive } : {}) } });
 
             return {
                 id: updated.id,

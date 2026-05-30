@@ -7,17 +7,19 @@ const maybe = shouldRun ? it : it.skip;
 
 describe('Auth integration (DB-backed)', () => {
     maybe('registers and persists sessions with Prisma', async () => {
-        const { EnvironmentConfig } = await import('../../../src/config/environment.js');
-        const { DatabaseConnection } = await import('../../../src/infrastructure/database/database-connection.js');
-        const { PrismaRoleMatrixSeeder } = await import('../../../src/modules/Auth/infrastructure/PrismaRoleMatrixSeeder.js');
-        const { PrismaAuthDao } = await import('../../../src/modules/Auth/infrastructure/PrismaAuthDao.js');
-        const { PrismaSessionService } = await import('../../../src/modules/Auth/infrastructure/PrismaSessionService.js');
-        const { TokenService } = await import('../../../src/modules/Auth/application/services/TokenService.js');
-        const { AuthService } = await import('../../../src/modules/Auth/application/services/AuthService.js');
+        const { EnvironmentConfig } = await import('../../src/config/environment.js');
+        const { DatabaseConnection } = await import('../../src/infrastructure/database/database-connection.js');
+        const { PrismaRoleMatrixSeeder } = await import('../../src/modules/Auth/infrastructure/PrismaRoleMatrixSeeder.js');
+        const { PrismaAuthDao } = await import('../../src/modules/Auth/infrastructure/PrismaAuthDao.js');
+        const { PrismaSessionService } = await import('../../src/modules/Auth/infrastructure/PrismaSessionService.js');
+        const { TokenService } = await import('../../src/modules/Auth/application/services/TokenService.js');
+        const { AuthService } = await import('../../src/modules/Auth/application/services/AuthService.js');
 
         const env = EnvironmentConfig.fromProcessEnv();
         const db = new DatabaseConnection(env.databaseUrl);
         await db.connect();
+
+        const fixtures = createAuthHttpFixtures(`auth-integration-${Date.now()}`);
 
         try {
             const prisma = db.getClient();
@@ -33,8 +35,6 @@ describe('Auth integration (DB-backed)', () => {
             const sessionService = new PrismaSessionService(prisma as any);
             const tokenService = new TokenService('integration-secret');
             const authService = new AuthService({ tokenService, sessionService, authDao } as never);
-
-            const fixtures = createAuthHttpFixtures('auth-integration');
 
             const session = await authService.register({
                 identifier: fixtures.registration.identifier,
@@ -53,6 +53,15 @@ describe('Auth integration (DB-backed)', () => {
             const storedUser = await (prisma as any).authUser.findUnique({ where: { identifier: fixtures.registration.identifier } });
             expect(storedUser).toBeDefined();
         } finally {
+            const prisma = db.getClient();
+            if (prisma) {
+                const user = await (prisma as any).authUser.findUnique({ where: { identifier: fixtures.registration.identifier } });
+                if (user?.id) {
+                    await (prisma as any).authSession.deleteMany({ where: { userId: user.id } });
+                }
+                await (prisma as any).authUser.deleteMany({ where: { identifier: fixtures.registration.identifier } });
+            }
+
             await db.disconnect();
         }
     });

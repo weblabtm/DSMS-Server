@@ -50,3 +50,16 @@ jobs:
           else
             npx tsx src/scripts/seed-rbac.ts
           fi
+
+      - name: Bootstrap Super Admin (optional, secret-backed)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          ENABLE_SUPER_ADMIN_BOOTSTRAP: ${{ secrets.ENABLE_SUPER_ADMIN_BOOTSTRAP }}
+          SUPER_ADMIN_IDENTIFIER: ${{ secrets.SUPER_ADMIN_IDENTIFIER }}
+          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+        run: |
+          if [ -f dist/scripts/bootstrap-super-admin.js ]; then
+            node dist/scripts/bootstrap-super-admin.js
+          else
+            npx tsx src/scripts/bootstrap-super-admin.ts
+          fi

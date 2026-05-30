@@ -36,6 +36,14 @@ class ServerBootstrap {
             } catch (error) {
                 console.error('RBAC seeding failed:', error instanceof Error ? error.message : String(error));
             }
+
+            try {
+                const { bootstrapSuperAdmin } = await import('./modules/Auth/infrastructure/SuperAdminBootstrap.js');
+                await bootstrapSuperAdmin(prisma as any);
+            } catch (error) {
+                console.error('Super Admin bootstrap failed:', error instanceof Error ? error.message : String(error));
+                throw error;
+            }
         }
 
         this.httpServer = this.application.listen(this.port, () => {

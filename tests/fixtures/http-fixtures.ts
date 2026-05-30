@@ -16,12 +16,13 @@ export type AuthHttpFixtures = {
 };
 
 export type TenantHttpFixtures = {
+    tenantAdmin: {
+        identifier: string;
+        password: string;
+    };
     createTenant: {
         name: string;
-        adminAccount: {
-            identifier: string;
-            password: string;
-        };
+        tenantAdminIdentifier: string;
     };
 };
 
@@ -39,12 +40,13 @@ export const createAuthHttpFixtures = (suffix: string): AuthHttpFixtures => ({
 });
 
 export const createTenantHttpFixtures = (suffix: string): TenantHttpFixtures => ({
+    tenantAdmin: {
+        identifier: `tenant-admin-${suffix}@example.com`,
+        password: 'Admin123!',
+    },
     createTenant: {
         name: `Tenant ${suffix}`,
-        adminAccount: {
-            identifier: `tenant-admin-${suffix}@example.com`,
-            password: 'Admin123!',
-        },
+        tenantAdminIdentifier: `tenant-admin-${suffix}@example.com`,
     },
 });
 

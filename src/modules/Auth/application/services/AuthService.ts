@@ -100,10 +100,14 @@ export class AuthService {
         return this.toSessionResponse(await this.refreshSession(request.refreshToken));
     }
 
-    public async register(account: AuthRegisterRequestDto, inviterRole: RoleName): Promise<AuthSessionResponseDto> {
+    public async register(account: AuthRegisterRequestDto, inviterRole?: RoleName): Promise<AuthSessionResponseDto> {
         const targetRole = account.role ?? 'Student';
 
-        if (!this.canInviteRole(inviterRole, targetRole)) {
+        if (!inviterRole) {
+            if (targetRole !== 'Tenant Admin') {
+                throw new Error('Only Tenant Admin can self-register');
+            }
+        } else if (!this.canInviteRole(inviterRole, targetRole)) {
             throw new Error(`Role ${inviterRole} cannot create ${targetRole}`);
         }
 

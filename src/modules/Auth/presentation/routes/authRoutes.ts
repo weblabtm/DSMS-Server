@@ -6,7 +6,7 @@ export const createAuthRouter = (controller: AuthController, authenticationMiddl
     const router = Router();
 
     // POST /auth/register
-    router.post('/register', authenticationMiddleware.handle.bind(authenticationMiddleware), controller.register.bind(controller));
+    router.post('/register', authenticationMiddleware.handleOptional.bind(authenticationMiddleware), controller.register.bind(controller));
 
     // POST /auth/login
     router.post('/login', controller.login.bind(controller));
