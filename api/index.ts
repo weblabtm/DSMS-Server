@@ -43,7 +43,14 @@ const bootstrapPromise = Promise.allSettled([
     console.log('Vercel function bootstrap complete');
 });
 
+void bootstrapPromise;
+
 export default async function handler(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    await bootstrapPromise;
-    app(request, response);
+    try {
+        app(request, response);
+    } catch (error) {
+        console.error('Vercel handler failed', error);
+        response.statusCode = 500;
+        response.end('Internal Server Error');
+    }
 }

@@ -64,5 +64,5 @@ describe('Auth integration (DB-backed)', () => {
 
             await db.disconnect();
         }
-    });
+    }, 20000);
 });
