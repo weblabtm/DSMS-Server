@@ -53,18 +53,18 @@ services:
       - minio-data:/data
 
   minio-init:
-    image: minio/mc:latest
+    image: alpine:3.18
     container_name: dsms-minio-init
     depends_on:
       minio:
         condition: service_started
-    command:
-      - sh
-      - -c
-      - >
-        until mc alias set local http://minio:9000 "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"; do sleep 2; done &&
-        mc mb --ignore-existing local/"${MINIO_BUCKET}" &&
-        if [ "${MINIO_BUCKET_POLICY}" = "public-read" ]; then mc anonymous set download local/"${MINIO_BUCKET}"; fi
+    command: >
+      sh -c "apk add --no-cache curl && \
+      curl -sL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/bin/mc && \
+      chmod +x /usr/bin/mc && \
+      until mc alias set local http://minio:9000 \"${MINIO_ACCESS_KEY}\" \"${MINIO_SECRET_KEY}\"; do sleep 2; done && \
+      mc mb --ignore-existing local/${MINIO_BUCKET} && \
+      if [ \"${MINIO_BUCKET_POLICY}\" = \"public-read\" ]; then mc anonymous set download local/${MINIO_BUCKET}; fi"
     environment:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
