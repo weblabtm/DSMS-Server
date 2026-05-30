@@ -16,7 +16,8 @@
     "seed:super-admin": "tsx src/scripts/bootstrap-super-admin.ts",
     "prisma:build-schema": "node scripts/build-prisma-schema.js",
     "prisma:generate": "npm run prisma:build-schema && prisma generate --schema=prisma/schema.prisma",
-    "prisma:migrate:dev": "npm run prisma:build-schema && prisma migrate dev --schema=prisma/schema.prisma"
+    "prisma:migrate:dev": "npm run prisma:build-schema && prisma migrate dev --schema=prisma/schema.prisma",
+    "prisma:migrate:deploy": "npm run prisma:build-schema && prisma migrate deploy --schema=prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",

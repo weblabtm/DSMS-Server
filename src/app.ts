@@ -58,6 +58,7 @@ export class ServerApplication {
         this.registerRoutes();
         this.registerDocumentation();
         this.registerNotFoundHandler();
+        this.registerErrorHandler();
     }
 
     public getApp(): Express {
@@ -97,6 +98,10 @@ export class ServerApplication {
 
     private registerNotFoundHandler(): void {
         this.app.use(this.notFoundHandler);
+    }
+
+    private registerErrorHandler(): void {
+        this.app.use(this.errorHandler);
     }
 
     private createCorsMiddleware() {
@@ -162,6 +167,24 @@ export class ServerApplication {
     private notFoundHandler(_request: Request, response: Response): void {
         response.status(404).json({
             message: 'Route not found',
+        });
+    }
+
+    private errorHandler(error: unknown, _request: Request, response: Response, _next: NextFunction): void {
+        const prismaError = typeof error === 'object' && error !== null ? (error as { code?: string; message?: string }) : undefined;
+
+        if (prismaError?.code === 'P2021') {
+            response.status(503).json({
+                message: 'Database schema is not initialized. Run Prisma migrations for the configured DATABASE_URL.',
+                code: prismaError.code,
+            });
+            return;
+        }
+
+        response.status(500).json({
+            message: 'Internal Server Error',
+            ...(prismaError?.code ? { code: prismaError.code } : {}),
+            ...(prismaError?.message ? { error: prismaError.message } : {}),
         });
     }
 }
