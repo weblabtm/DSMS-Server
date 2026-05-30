@@ -1,4 +1,4 @@
-import app from '../src/app.js';
+import { ServerApplication } from '../src/app.js';
 import { EnvironmentConfig } from '../src/config/environment.js';
 import { DatabaseConnection } from '../src/infrastructure/database/database-connection.js';
 import { RedisConnection } from '../src/infrastructure/redis/redis-connection.js';
@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 const environment = EnvironmentConfig.fromProcessEnv();
 const databaseConnection = new DatabaseConnection(environment.databaseUrl);
 const redisConnection = new RedisConnection(environment.redisUrl);
+const app = new ServerApplication(environment, databaseConnection.getClient()).getApp();
 
 const dependencyHealthProvider: DependencyHealthProvider = async () => {
     const [databaseStatus, redisStatus] = await Promise.all([
