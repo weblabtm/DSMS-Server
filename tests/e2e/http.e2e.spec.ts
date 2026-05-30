@@ -6,6 +6,7 @@ import { EnvironmentConfig } from '../../src/config/environment.js';
 import { ServerApplication } from '../../src/app.js';
 import { DatabaseConnection } from '../../src/infrastructure/database/database-connection.js';
 import { createTenantHttpFixtures } from '../fixtures/http-fixtures.js';
+import { requestJson } from '../fixtures/http-client.js';
 
 const startTestServer = async () => {
     const databaseUrl = process.env.DATABASE_URL;
@@ -61,6 +62,7 @@ describe('HTTP e2e smoke tests', () => {
         const server = await startTestServer();
         const suffix = `e2e-${Date.now()}`;
         const fixtures = createTenantHttpFixtures(suffix);
+        const hostHeader = `tenant-${suffix}.example.test`;
         const createdIdentifiers: string[] = [fixtures.tenantAdmin.identifier];
         const createdTenantIds: string[] = [];
         let flowError: Error | undefined;
@@ -68,129 +70,146 @@ describe('HTTP e2e smoke tests', () => {
 
         try {
             step = 'GET /health';
-            const healthResponse = await fetch(`${server.baseUrl}/health`);
-            expect(healthResponse.status).toBe(200);
+            const healthResponse = await requestJson(`${server.baseUrl}/health`, {
+                headers: {
+                    host: hostHeader,
+                },
+            });
+            expect(healthResponse.statusCode).toBe(200);
+
+            step = 'GET /config';
+            const configResponse = await requestJson(`${server.baseUrl}/config`, {
+                headers: {
+                    host: hostHeader,
+                },
+            });
+            expect(configResponse.statusCode).toBe(200);
+            expect(configResponse.body).toEqual({
+                apiBaseUrl: `http://${hostHeader}`,
+                tenantSlug: `tenant-${suffix}`,
+                hostname: `${hostHeader}`,
+            });
 
             step = 'POST /auth/register (Tenant Admin self-registration)';
-            const registerResponse = await fetch(`${server.baseUrl}/auth/register`, {
+            const registerResponse = await requestJson(`${server.baseUrl}/auth/register`, {
                 method: 'POST',
                 headers: {
-                    'content-type': 'application/json',
+                    host: hostHeader,
                 },
-                body: JSON.stringify({
+                body: {
                     identifier: fixtures.tenantAdmin.identifier,
                     password: fixtures.tenantAdmin.password,
                     role: 'Tenant Admin',
-                }),
+                },
             });
 
-            expect(registerResponse.status).toBe(201);
-            const registerSession = await registerResponse.json();
+            expect(registerResponse.statusCode).toBe(201);
+            const registerSession = registerResponse.body as Record<string, unknown>;
             expect(registerSession.accessToken).toBeTruthy();
             expect(registerSession.refreshToken).toBeTruthy();
             expect(registerSession.sessionId).toBeTruthy();
 
             step = 'POST /auth/login';
-            const loginResponse = await fetch(`${server.baseUrl}/auth/login`, {
+            const loginResponse = await requestJson(`${server.baseUrl}/auth/login`, {
                 method: 'POST',
                 headers: {
-                    'content-type': 'application/json',
+                    host: hostHeader,
                 },
-                body: JSON.stringify({
+                body: {
                     identifier: fixtures.tenantAdmin.identifier,
                     password: fixtures.tenantAdmin.password,
-                }),
+                },
             });
 
-            expect(loginResponse.status).toBe(200);
-            const loginSession = await loginResponse.json();
+            expect(loginResponse.statusCode).toBe(200);
+            const loginSession = loginResponse.body as Record<string, unknown>;
             expect(loginSession.accessToken).toBeTruthy();
             expect(loginSession.refreshToken).toBeTruthy();
 
             step = 'POST /auth/refresh';
-            const refreshResponse = await fetch(`${server.baseUrl}/auth/refresh`, {
+            const refreshResponse = await requestJson(`${server.baseUrl}/auth/refresh`, {
                 method: 'POST',
                 headers: {
-                    'content-type': 'application/json',
+                    host: hostHeader,
                 },
-                body: JSON.stringify({
+                body: {
                     refreshToken: loginSession.refreshToken,
-                }),
+                },
             });
 
-            expect(refreshResponse.status).toBe(200);
-            const refreshedSession = await refreshResponse.json();
+            expect(refreshResponse.statusCode).toBe(200);
+            const refreshedSession = refreshResponse.body as Record<string, unknown>;
             expect(refreshedSession.accessToken).toBeTruthy();
             expect(refreshedSession.refreshToken).toBeTruthy();
 
             step = 'POST /tenant';
-            const tenantResponse = await fetch(`${server.baseUrl}/tenant`, {
+            const tenantResponse = await requestJson(`${server.baseUrl}/tenant`, {
                 method: 'POST',
                 headers: {
-                    'content-type': 'application/json',
+                    host: hostHeader,
                     authorization: `Bearer ${loginSession.accessToken}`,
                 },
-                body: JSON.stringify(fixtures.createTenant),
+                body: fixtures.createTenant,
             });
 
-            expect(tenantResponse.status).toBe(201);
+            expect(tenantResponse.statusCode).toBe(201);
 
-            const createdTenant = await tenantResponse.json();
+            const createdTenant = tenantResponse.body as Record<string, unknown>;
             createdTenantIds.push(String(createdTenant.id));
             expect(createdTenant.name).toBe(fixtures.createTenant.name);
             expect(createdTenant.isActive).toBe(true);
 
             step = 'GET /tenant';
-            const listResponse = await fetch(`${server.baseUrl}/tenant`, {
-                method: 'GET',
+            const listResponse = await requestJson(`${server.baseUrl}/tenant`, {
                 headers: {
+                    host: hostHeader,
                     authorization: `Bearer ${loginSession.accessToken}`,
                 },
             });
-            expect(listResponse.status).toBe(200);
-            const tenantList = await listResponse.json();
+            expect(listResponse.statusCode).toBe(200);
+            const tenantList = listResponse.body as Array<Record<string, unknown>>;
             expect(Array.isArray(tenantList)).toBe(true);
             expect(tenantList.some((item: any) => item.id === createdTenant.id)).toBe(true);
 
             step = 'GET /tenant/{id}';
-            const getTenantResponse = await fetch(`${server.baseUrl}/tenant/${createdTenant.id}`, {
-                method: 'GET',
+            const getTenantResponse = await requestJson(`${server.baseUrl}/tenant/${createdTenant.id}`, {
                 headers: {
+                    host: hostHeader,
                     authorization: `Bearer ${loginSession.accessToken}`,
                 },
             });
-            expect(getTenantResponse.status).toBe(200);
-            const getTenant = await getTenantResponse.json();
+            expect(getTenantResponse.statusCode).toBe(200);
+            const getTenant = getTenantResponse.body as Record<string, unknown>;
             expect(getTenant.id).toBe(createdTenant.id);
 
             step = 'PATCH /tenant/{id}';
-            const patchResponse = await fetch(`${server.baseUrl}/tenant/${createdTenant.id}`, {
+            const patchResponse = await requestJson(`${server.baseUrl}/tenant/${createdTenant.id}`, {
                 method: 'PATCH',
                 headers: {
-                    'content-type': 'application/json',
+                    host: hostHeader,
                     authorization: `Bearer ${loginSession.accessToken}`,
                 },
-                body: JSON.stringify({
+                body: {
                     name: `${fixtures.createTenant.name}-updated`,
                     isActive: false,
-                }),
+                },
             });
-            expect(patchResponse.status).toBe(200);
-            const patchedTenant = await patchResponse.json();
+            expect(patchResponse.statusCode).toBe(200);
+            const patchedTenant = patchResponse.body as Record<string, unknown>;
             expect(patchedTenant.name).toBe(`${fixtures.createTenant.name}-updated`);
             expect(patchedTenant.isActive).toBe(false);
 
             step = 'POST /auth/logout';
-            const logoutResponse = await fetch(`${server.baseUrl}/auth/logout`, {
+            const logoutResponse = await requestJson(`${server.baseUrl}/auth/logout`, {
                 method: 'POST',
                 headers: {
-                    'content-type': 'application/json',
+                    host: hostHeader,
                 },
-                body: JSON.stringify({
+                body: {
                     refreshToken: refreshedSession.refreshToken,
-                }),
+                },
             });
-            expect(logoutResponse.status).toBe(204);
+            expect(logoutResponse.statusCode).toBe(204);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             flowError = new Error(`Endpoint flow failed at step "${step}": ${message}`);

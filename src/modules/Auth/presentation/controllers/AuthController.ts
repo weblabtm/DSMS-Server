@@ -13,7 +13,7 @@ export class AuthController {
 
     // POST /auth/login
     public async login(request: Request, response: Response): Promise<void> {
-        const dto = AuthRequestMapper.toLoginRequestDto(request.body, request.tenantContext);
+        const dto = AuthRequestMapper.toLoginRequestDto(request.body);
         const session = await this.authService.login(dto);
 
         response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
@@ -21,7 +21,7 @@ export class AuthController {
 
     // POST /auth/register
     public async register(request: Request, response: Response): Promise<void> {
-        const dto = AuthRequestMapper.toRegisterRequestDto(request.body, request.tenantContext);
+        const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
         const inviterRole = request.authContext?.roles[0];
 
         try {

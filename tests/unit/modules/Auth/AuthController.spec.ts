@@ -24,9 +24,9 @@ describe('AuthController', () => {
             json: vi.fn(),
         };
 
-        await controller.login({ body: { identifier: 'admin@example.com', password: 'secret' }, tenantContext: { host: 'acme.example.com', hostname: 'acme.example.com', tenantSlug: 'tenant-1', apiBaseUrl: 'https://acme.example.com' } } as never, response as never);
+        await controller.login({ body: { identifier: 'admin@example.com', password: 'secret' } } as never, response as never);
 
-        expect(authService.login).toHaveBeenCalledWith({ identifier: 'admin@example.com', password: 'secret', tenantId: 'tenant-1' });
+        expect(authService.login).toHaveBeenCalledWith({ identifier: 'admin@example.com', password: 'secret' });
         expect(response.status).toHaveBeenCalledWith(200);
         expect(response.json).toHaveBeenCalledWith({
             sessionId: 'session-1',
@@ -86,9 +86,9 @@ describe('AuthController', () => {
             json: vi.fn(),
         };
 
-        await controller.register({ body: { identifier: 'student@example.com', password: 'secret', role: 'Student' }, authContext: { roles: ['Front Desk'] }, tenantContext: { host: 'acme.example.com', hostname: 'acme.example.com', tenantSlug: 'tenant-1', apiBaseUrl: 'https://acme.example.com' } } as never, response as never);
+        await controller.register({ body: { identifier: 'student@example.com', password: 'secret', role: 'Student' }, authContext: { roles: ['Front Desk'] } } as never, response as never);
 
-        expect(authService.register).toHaveBeenCalledWith({ identifier: 'student@example.com', password: 'secret', tenantId: 'tenant-1', role: 'Student' }, 'Front Desk');
+        expect(authService.register).toHaveBeenCalledWith({ identifier: 'student@example.com', password: 'secret', role: 'Student' }, 'Front Desk');
         expect(response.status).toHaveBeenCalledWith(201);
         expect(response.json).toHaveBeenCalledWith({
             sessionId: 'session-3',
