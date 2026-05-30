@@ -69,6 +69,34 @@ jobs:
           npm run prisma:build-schema
           npx prisma generate --schema=prisma/schema.prisma
 
+      - name: Apply migrations to Supabase (PROD_DATABASE_URL)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Seed RBAC to Supabase
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -f dist/scripts/seed-rbac.js ]; then
+            node dist/scripts/seed-rbac.js
+          else
+            npx tsx src/scripts/seed-rbac.ts
+          fi
+
+      - name: Bootstrap Super Admin to Supabase (optional)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          ENABLE_SUPER_ADMIN_BOOTSTRAP: ${{ secrets.ENABLE_SUPER_ADMIN_BOOTSTRAP }}
+          SUPER_ADMIN_IDENTIFIER: ${{ secrets.SUPER_ADMIN_IDENTIFIER }}
+          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+        run: |
+          if [ -f dist/scripts/bootstrap-super-admin.js ]; then
+            node dist/scripts/bootstrap-super-admin.js
+          else
+            npx tsx src/scripts/bootstrap-super-admin.ts
+          fi
+
       - name: Apply migrations to integration DB
         env:
           DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms_integration
