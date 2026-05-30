@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { ServerApplication } from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
 import { DatabaseConnection } from './infrastructure/database/database-connection.js';
+import { MinioStorageService } from './infrastructure/storage/minio-storage.js';
 import { RedisConnection } from './infrastructure/redis/redis-connection.js';
 import type { DependencyHealthProvider } from './app.js';
 import type { Express } from 'express';
@@ -17,12 +18,14 @@ class ServerBootstrap {
         private readonly enableSwaggerDocs: boolean,
         private readonly databaseConnection: DatabaseConnection,
         private readonly redisConnection: RedisConnection,
+        private readonly storageService: MinioStorageService,
     ) { }
 
     public async start(): Promise<void> {
         await Promise.all([
             this.databaseConnection.connect(),
             this.redisConnection.connect(),
+            this.storageService.connect(),
         ]);
 
         // Seed RBAC matrix if database is available
@@ -89,6 +92,7 @@ class ServerBootstrap {
         await Promise.all([
             this.redisConnection.disconnect(),
             this.databaseConnection.disconnect(),
+            this.storageService.disconnect(),
         ]);
     }
 }
@@ -96,6 +100,7 @@ class ServerBootstrap {
 const environment = EnvironmentConfig.fromProcessEnv();
 const databaseConnection = new DatabaseConnection(environment.databaseUrl);
 const redisConnection = new RedisConnection(environment.redisUrl);
+const storageService = new MinioStorageService(environment);
 
 const dependencyHealthProvider: DependencyHealthProvider = async () => {
     const [databaseStatus, redisStatus] = await Promise.all([
@@ -118,8 +123,9 @@ const dependencyHealthProvider: DependencyHealthProvider = async () => {
 const appInstance = new ServerApplication(environment, databaseConnection.getClient());
 
 appInstance.getApp().locals.dependencyHealthProvider = dependencyHealthProvider;
+appInstance.getApp().locals.storageService = storageService;
 
-const server = new ServerBootstrap(appInstance.getApp(), environment.port, environment.enableSwaggerDocs, databaseConnection, redisConnection);
+const server = new ServerBootstrap(appInstance.getApp(), environment.port, environment.enableSwaggerDocs, databaseConnection, redisConnection, storageService);
 
 server.start().catch((error: unknown) => {
     console.error('Failed to start server:', error);

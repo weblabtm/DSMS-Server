@@ -3,16 +3,18 @@ services:
     image: postgres:16-alpine
     container_name: dsms-postgres
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-dsms}
-      POSTGRES_USER: ${POSTGRES_USER:-dsms}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dsms}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dsms} -d ${POSTGRES_DB:-dsms}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -21,9 +23,11 @@ services:
     image: redis:7-alpine
     container_name: dsms-redis
     restart: unless-stopped
+    env_file:
+      - .env
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -31,6 +35,41 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: dsms-minio
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: dsms-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    command:
+      - sh
+      - -c
+      - >
+        until mc alias set local http://minio:9000 "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"; do sleep 2; done &&
+        mc mb --ignore-existing local/"${MINIO_BUCKET}" &&
+        if [ "${MINIO_BUCKET_POLICY}" = "public-read" ]; then mc anonymous set download local/"${MINIO_BUCKET}"; fi
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_BUCKET_POLICY: ${MINIO_BUCKET_POLICY}
 
   server:
     profiles: ["container"]
@@ -42,16 +81,26 @@ services:
     env_file:
       - .env
     environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-dsms}:${POSTGRES_PASSWORD:-dsms}@postgres:5432/${POSTGRES_DB:-dsms}?schema=public
-      REDIS_URL: redis://redis:6379
+      NODE_ENV: ${NODE_ENV}
+      DATABASE_URL: ${DOCKER_DATABASE_URL}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+      MINIO_ENDPOINT: ${DOCKER_MINIO_ENDPOINT}
+      MINIO_PORT: ${DOCKER_MINIO_PORT}
+      MINIO_USE_SSL: ${DOCKER_MINIO_USE_SSL}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_REGION: ${MINIO_REGION}
+      MINIO_BUCKET_POLICY: ${MINIO_BUCKET_POLICY}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT}:3000"
     volumes:
       - .:/app
       - /app/node_modules
@@ -60,3 +109,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  minio-data:

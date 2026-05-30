@@ -31,6 +31,7 @@
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.2.1",
     "express": "^5.2.1",
+    "minio": "^8.0.7",
     "prisma": "^7.8.0",
     "redis": "^5.8.2",
     "swagger-ui-express": "^5.0.1"

@@ -3,13 +3,22 @@ Driving School Management System server codebase
 
 ## Local development
 
-1. The repo includes a local `.env` and a matching `.env.example` for Docker, PostgreSQL, Redis, `PORT`, and `ALLOWED_ORIGINS`.
+1. The repo includes a local `.env` and a matching `.env.example` for PostgreSQL, Redis, MinIO, `PORT`, and `ALLOWED_ORIGINS`.
 2. Start the local infrastructure and server with `sh scripts/local-dev.sh dev` on a POSIX shell, or `powershell -File scripts/local-dev.ps1 dev` on Windows.
-3. Use `sh scripts/local-dev.sh up`, `down`, `restart`, `logs`, `status`, `db-shell`, `redis-cli`, `generate`, `migrate`, `studio`, `build`, `test`, or `reset-db` as needed. The PowerShell wrapper exposes the same commands.
+3. The local-dev wrappers load the real `.env`, derive the container-only values such as `DOCKER_DATABASE_URL`, and then invoke Compose. That keeps the compose file free of hardcoded fallback credentials and URLs.
+4. Use `sh scripts/local-dev.sh up`, `down`, `restart`, `logs`, `status`, `db-shell`, `redis-cli`, `generate`, `migrate`, `studio`, `build`, `test`, or `reset-db` as needed. The PowerShell wrapper exposes the same commands.
 
 ## Docker
 
-`docker compose up -d postgres redis` starts only PostgreSQL and Redis. The server runs on the host during local development, while the compose file also keeps a containerized server profile available for future use.
+`powershell -File scripts/local-dev.ps1 up` or `sh scripts/local-dev.sh up` starts the local data services and creates the MinIO bucket with the selected policy. The wrapper is the supported pipeline because it loads the real `.env`, derives the container-only URLs, and then invokes Compose without hardcoded fallback values in the compose file.
+
+## MinIO Storage
+
+The server now includes reusable MinIO utilities for bucket initialization, uploads, downloads, and public object URLs.
+
+1. Configure `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`, and `MINIO_BUCKET_POLICY`.
+2. Set `MINIO_BUCKET_POLICY=public-read` only if anonymous reads are intended. Private buckets keep downloads behind signed URLs or authenticated server access.
+3. Use `MinioStorageService` from `src/infrastructure/storage/minio-storage.ts` in module handlers or services when you need reusable file storage operations.
 
 ## Super Admin Bootstrap
 
