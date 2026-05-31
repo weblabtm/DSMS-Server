@@ -177,6 +177,7 @@ export class ServerApplication {
             apiBaseUrl: tenantContext?.apiBaseUrl ?? `${request.protocol}://${request.get('host') ?? 'localhost'}`,
             tenantSlug: tenantContext?.tenantSlug ?? null,
             hostname: tenantContext?.hostname ?? request.hostname,
+            enableSubdomainRouting: this.environment.enableSubdomainRouting,
         });
     }
 

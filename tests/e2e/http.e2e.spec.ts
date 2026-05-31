@@ -88,6 +88,7 @@ describe('HTTP e2e smoke tests', () => {
                 apiBaseUrl: `http://${hostHeader}`,
                 tenantSlug: `tenant-${suffix}`,
                 hostname: `${hostHeader}`,
+                enableSubdomainRouting: false,
             });
 
             step = 'POST /auth/register (Tenant Admin self-registration)';

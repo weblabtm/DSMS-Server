@@ -54,6 +54,7 @@ describe('Tenant routing integration', () => {
                 apiBaseUrl: `http://${hostHeader}`,
                 tenantSlug: 'tenant-one',
                 hostname: hostHeader,
+                enableSubdomainRouting: true,
             });
 
             const registerResponse = await requestJson(`${server.baseUrl}/auth/register`, {
@@ -121,6 +122,7 @@ describe('Tenant routing integration', () => {
                 apiBaseUrl: 'http://localhost:3000',
                 tenantSlug: null,
                 hostname: 'localhost',
+                enableSubdomainRouting: false,
             });
         } finally {
             await new Promise<void>((resolve, reject) => {

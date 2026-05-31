@@ -7,7 +7,7 @@ const RESERVED_SUBDOMAINS = new Set(['api', 'app', 'admin', 'www']);
 const isLikelyIpAddress = (host: string): boolean => /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || /^[\da-f:]+$/i.test(host);
 
 export class TenantRoutingMiddleware {
-    public constructor(private readonly enableSubdomainRouting = false) {}
+    public constructor(private readonly enableSubdomainRouting = false) { }
 
     public handle(request: Request, _response: Response, next: NextFunction): void {
         request.tenantContext = this.resolveTenantContext(request);
