@@ -1,4 +1,6 @@
 # DSMS-Server
+Multi-tenant Driving School Management System (SaaS) — server codebase
+
 Driving School Management System server codebase
 
 ## Infrastructure Docs
