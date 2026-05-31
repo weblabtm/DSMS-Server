@@ -49,7 +49,7 @@ export class ServerApplication {
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
-        this.tenantRoutingMiddleware = new TenantRoutingMiddleware();
+        this.tenantRoutingMiddleware = new TenantRoutingMiddleware(environment.enableSubdomainRouting);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
 
         // tenant module

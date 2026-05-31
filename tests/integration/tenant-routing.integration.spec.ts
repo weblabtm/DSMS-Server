@@ -11,6 +11,7 @@ const startTestServer = async () => {
         PORT: '0',
         AUTH_SECRET: 'integration-secret',
         ENABLE_SWAGGER_DOCS: 'false',
+        ENABLE_SUBDOMAIN_ROUTING: 'true',
     } as NodeJS.ProcessEnv);
 
     const application = new ServerApplication(environment);
@@ -84,6 +85,47 @@ describe('Tenant routing integration', () => {
             expect((loginResponse.body as { accessToken?: string }).accessToken).toBeTruthy();
         } finally {
             await server.close();
+        }
+    });
+
+    it('falls back to normal routing when subdomain routing is disabled', async () => {
+        const environment = new EnvironmentConfig({
+            PORT: '0',
+            AUTH_SECRET: 'integration-secret',
+            ENABLE_SWAGGER_DOCS: 'false',
+            ENABLE_SUBDOMAIN_ROUTING: 'false',
+        } as NodeJS.ProcessEnv);
+
+        const application = new ServerApplication(environment);
+        const app = application.getApp();
+        const server = createServer(app);
+
+        await new Promise<void>((resolve) => {
+            server.listen(0, resolve);
+        });
+
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+            throw new Error('Unable to determine test server port');
+        }
+
+        try {
+            const configResponse = await requestJson(`http://127.0.0.1:${address.port}/config`, {
+                headers: {
+                    host: 'localhost:3000',
+                },
+            });
+
+            expect(configResponse.statusCode).toBe(200);
+            expect(configResponse.body).toEqual({
+                apiBaseUrl: 'http://localhost:3000',
+                tenantSlug: null,
+                hostname: 'localhost',
+            });
+        } finally {
+            await new Promise<void>((resolve, reject) => {
+                server.close((error) => (error ? reject(error) : resolve()));
+            });
         }
     });
 });

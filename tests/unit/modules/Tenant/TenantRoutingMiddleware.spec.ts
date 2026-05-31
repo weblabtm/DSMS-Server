@@ -4,7 +4,7 @@ import { TenantRoutingMiddleware } from '../../../../src/modules/Tenant/presenta
 
 describe('TenantRoutingMiddleware', () => {
     it('derives tenant context from a tenant subdomain', () => {
-        const middleware = new TenantRoutingMiddleware();
+        const middleware = new TenantRoutingMiddleware(true);
         const request = {
             headers: {
                 host: 'acme.example.com:3000',
@@ -28,7 +28,7 @@ describe('TenantRoutingMiddleware', () => {
     });
 
     it('ignores reserved hosts like api and localhost', () => {
-        const middleware = new TenantRoutingMiddleware();
+        const middleware = new TenantRoutingMiddleware(true);
         const request = {
             headers: {
                 host: 'api.example.com',
@@ -42,5 +42,27 @@ describe('TenantRoutingMiddleware', () => {
         middleware.handle(request as never, response as never, next);
 
         expect((request as { tenantContext?: { tenantSlug?: string } }).tenantContext?.tenantSlug).toBeUndefined();
+    });
+
+    it('does not derive tenant slug when subdomain routing is disabled', () => {
+        const middleware = new TenantRoutingMiddleware(false);
+        const request = {
+            headers: {
+                host: 'acme.example.com:3000',
+                'x-forwarded-proto': 'https',
+            },
+            protocol: 'http',
+            hostname: 'acme.example.com',
+        };
+        const response = {};
+        const next = vi.fn();
+
+        middleware.handle(request as never, response as never, next);
+
+        expect((request as { tenantContext?: { host: string; hostname: string; tenantSlug?: string; apiBaseUrl: string } }).tenantContext).toEqual({
+            host: 'acme.example.com:3000',
+            hostname: 'acme.example.com',
+            apiBaseUrl: 'https://acme.example.com:3000',
+        });
     });
 });

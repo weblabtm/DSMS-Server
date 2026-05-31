@@ -7,6 +7,8 @@ const RESERVED_SUBDOMAINS = new Set(['api', 'app', 'admin', 'www']);
 const isLikelyIpAddress = (host: string): boolean => /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || /^[\da-f:]+$/i.test(host);
 
 export class TenantRoutingMiddleware {
+    public constructor(private readonly enableSubdomainRouting = false) {}
+
     public handle(request: Request, _response: Response, next: NextFunction): void {
         request.tenantContext = this.resolveTenantContext(request);
         next();
@@ -16,8 +18,8 @@ export class TenantRoutingMiddleware {
         const forwardedHost = this.getHeaderValue(request.headers['x-forwarded-host']);
         const host = forwardedHost ?? this.getHeaderValue(request.headers.host) ?? request.hostname ?? 'localhost';
         const hostname = this.stripPort(host);
-        const tenantSlug = this.resolveTenantSlug(hostname);
         const protocol = this.getProtocol(request);
+        const tenantSlug = this.enableSubdomainRouting ? this.resolveTenantSlug(hostname) : undefined;
 
         return {
             host,

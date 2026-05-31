@@ -52,6 +52,8 @@ export class EnvironmentConfig {
 
     public readonly enableSwaggerDocs: boolean;
 
+    public readonly enableSubdomainRouting: boolean;
+
     public constructor(env: NodeJS.ProcessEnv = process.env) {
         this.port = parsePort(env.PORT, 3000);
         this.allowedOrigins = parseList(env.ALLOWED_ORIGINS);
@@ -67,6 +69,7 @@ export class EnvironmentConfig {
         this.minioRegion = env.MINIO_REGION ?? 'us-east-1';
         this.minioBucketPolicy = env.MINIO_BUCKET_POLICY === 'public-read' ? 'public-read' : 'private';
         this.enableSwaggerDocs = String(env.ENABLE_SWAGGER_DOCS ?? '').toLowerCase() === 'true';
+        this.enableSubdomainRouting = parseBoolean(env.ENABLE_SUBDOMAIN_ROUTING, false);
     }
 
     public static fromProcessEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {
