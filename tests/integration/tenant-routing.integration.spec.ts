@@ -43,6 +43,18 @@ describe('Tenant routing integration', () => {
         const hostHeader = 'tenant-one.example.test';
 
         try {
+            const availabilityResponse = await requestJson(`${server.baseUrl}/tenant/slug/sadeesha-lerners/availability`, {
+                headers: {
+                    host: hostHeader,
+                },
+            });
+
+            expect(availabilityResponse.statusCode).toBe(200);
+            expect(availabilityResponse.body).toMatchObject({
+                slug: 'sadeesha-lerners',
+                available: expect.any(Boolean),
+            });
+
             const configResponse = await requestJson(`${server.baseUrl}/config`, {
                 headers: {
                     host: hostHeader,
@@ -52,9 +64,7 @@ describe('Tenant routing integration', () => {
             expect(configResponse.statusCode).toBe(200);
             expect(configResponse.body).toEqual({
                 apiBaseUrl: `http://${hostHeader}`,
-                tenantSlug: 'tenant-one',
                 hostname: hostHeader,
-                enableSubdomainRouting: true,
             });
 
             const registerResponse = await requestJson(`${server.baseUrl}/auth/register`, {
@@ -120,9 +130,7 @@ describe('Tenant routing integration', () => {
             expect(configResponse.statusCode).toBe(200);
             expect(configResponse.body).toEqual({
                 apiBaseUrl: 'http://localhost:3000',
-                tenantSlug: null,
                 hostname: 'localhost',
-                enableSubdomainRouting: false,
             });
         } finally {
             await new Promise<void>((resolve, reject) => {

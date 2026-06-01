@@ -24,8 +24,10 @@ describe('TenantController', () => {
 
     it('allows tenant creation only for super admin users', async () => {
         const tenantService = {
-            createTenant: vi.fn().mockResolvedValue({ id: 'tenant-1', name: 'School 1', isActive: true }),
+            createTenant: vi.fn().mockResolvedValue({ id: 'tenant-1', name: 'School 1', slug: 'school-1', isActive: true }),
             getTenant: vi.fn(),
+            getTenantBySlug: vi.fn(),
+            isSlugAvailable: vi.fn(),
             listTenants: vi.fn(),
             updateTenant: vi.fn(),
         };
@@ -35,10 +37,11 @@ describe('TenantController', () => {
             json: vi.fn(),
         };
 
-        await controller.create({ body: { name: 'School 1', tenantAdminIdentifier: 'admin@school' }, authContext: { isSuperAdmin: () => true, hasRole: () => false } } as never, response as never);
+        await controller.create({ body: { name: 'School 1', slug: 'school-1', tenantAdminIdentifier: 'admin@school' }, authContext: { isSuperAdmin: () => true, hasRole: () => false } } as never, response as never);
 
         expect(tenantService.createTenant).toHaveBeenCalledWith({
             name: 'School 1',
+            slug: 'school-1',
             tenantAdminIdentifier: 'admin@school',
         });
         expect(response.status).toHaveBeenCalledWith(201);

@@ -14,7 +14,6 @@ import { createTenantRouter } from './modules/Tenant/presentation/routes/tenantR
 import { InMemoryTenantDao } from './modules/Tenant/infrastructure/InMemoryTenantDao.js';
 import { TenantService } from './modules/Tenant/application/services/TenantService.js';
 import { TenantController } from './modules/Tenant/presentation/controllers/TenantController.js';
-import { TenantRoutingMiddleware } from './modules/Tenant/presentation/middleware/TenantRoutingMiddleware.js';
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
 
@@ -37,7 +36,6 @@ export class ServerApplication {
 
     private readonly authController: AuthController;
     private readonly tenantController: TenantController;
-    private readonly tenantRoutingMiddleware: TenantRoutingMiddleware;
     private readonly authenticationMiddleware: AuthenticationMiddleware;
 
     public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
@@ -49,7 +47,6 @@ export class ServerApplication {
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
-        this.tenantRoutingMiddleware = new TenantRoutingMiddleware(environment.enableSubdomainRouting);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
 
         // tenant module
@@ -71,7 +68,6 @@ export class ServerApplication {
     private registerMiddleware(): void {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
-        this.app.use(this.tenantRoutingMiddleware.handle.bind(this.tenantRoutingMiddleware));
         this.app.use(this.createCorsMiddleware());
     }
 
@@ -86,6 +82,9 @@ export class ServerApplication {
         this.app.get('/config', this.clientConfigHandler.bind(this));
 
         this.app.get('/health', this.healthCheckHandler);
+
+        // Public slug availability check so registration can probe before authentication exists.
+        this.app.get('/tenant/slug/:slug/availability', this.tenantController.checkSlugAvailability.bind(this.tenantController));
 
         const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware);
         this.app.use('/auth', authRouter);
@@ -110,11 +109,32 @@ export class ServerApplication {
         this.app.use(this.errorHandler);
     }
 
+    private isOriginAllowed(origin: string): boolean {
+        if (this.allowedOrigins.has('*') || this.allowedOrigins.has(origin)) {
+            return true;
+        }
+
+        for (const allowedOrigin of this.allowedOrigins) {
+            if (!allowedOrigin.includes('*')) {
+                continue;
+            }
+
+            const escapedPattern = allowedOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+            const originPattern = new RegExp(`^${escapedPattern}$`);
+
+            if (originPattern.test(origin)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private createCorsMiddleware() {
         return (request: Request, response: Response, next: NextFunction) => {
             const origin = request.headers.origin;
 
-            if (typeof origin === 'string' && (this.allowedOrigins.has('*') || this.allowedOrigins.has(origin))) {
+            if (typeof origin === 'string' && this.isOriginAllowed(origin)) {
                 response.setHeader('Access-Control-Allow-Origin', origin);
                 response.setHeader('Vary', 'Origin');
             }
@@ -171,13 +191,9 @@ export class ServerApplication {
     }
 
     private clientConfigHandler(request: Request, response: Response): void {
-        const tenantContext = request.tenantContext;
-
         response.status(200).json({
-            apiBaseUrl: tenantContext?.apiBaseUrl ?? `${request.protocol}://${request.get('host') ?? 'localhost'}`,
-            tenantSlug: tenantContext?.tenantSlug ?? null,
-            hostname: tenantContext?.hostname ?? request.hostname,
-            enableSubdomainRouting: this.environment.enableSubdomainRouting,
+            apiBaseUrl: `${request.protocol}://${request.get('host') ?? 'localhost'}`,
+            hostname: request.hostname,
         });
     }
 

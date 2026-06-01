@@ -49,6 +49,7 @@ describe('Tenant integration (DB-backed)', () => {
 
             const tenant = await tenantService.createTenant({
                 name: fixtures.createTenant.name,
+                slug: fixtures.createTenant.slug,
                 tenantAdminIdentifier: fixtures.tenantAdmin.identifier,
             });
 
@@ -63,7 +64,7 @@ describe('Tenant integration (DB-backed)', () => {
             const storedAdmin = await (prisma as any).authUser.findUnique({ where: { identifier: fixtures.tenantAdmin.identifier } });
             expect(storedAdmin).toBeDefined();
             expect(storedAdmin.roles).toContain('Tenant Admin');
-            expect(storedAdmin.tenantId).toBe(tenant.id);
+            expect(storedAdmin.tenantId).toBe(tenant.slug);
         } finally {
             const prisma = db.getClient();
             if (prisma) {

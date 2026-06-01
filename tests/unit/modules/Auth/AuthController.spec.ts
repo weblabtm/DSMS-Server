@@ -39,6 +39,25 @@ describe('AuthController', () => {
         });
     });
 
+    it('returns 401 for invalid login credentials', async () => {
+        const authService = {
+            register: vi.fn(),
+            login: vi.fn().mockRejectedValue(new Error('Invalid credentials')),
+            refresh: vi.fn(),
+        };
+
+        const controller = new AuthController(authService as never);
+        const response = {
+            status: vi.fn().mockReturnThis(),
+            json: vi.fn(),
+        };
+
+        await controller.login({ body: { identifier: 'missing@example.com', password: 'wrong' } } as never, response as never);
+
+        expect(response.status).toHaveBeenCalledWith(401);
+        expect(response.json).toHaveBeenCalledWith({ message: 'Invalid credentials' });
+    });
+
     it('maps refresh request dto through the service', async () => {
         const authService = {
             register: vi.fn(),

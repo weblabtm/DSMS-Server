@@ -86,9 +86,7 @@ describe('HTTP e2e smoke tests', () => {
             expect(configResponse.statusCode).toBe(200);
             expect(configResponse.body).toEqual({
                 apiBaseUrl: `http://${hostHeader}`,
-                tenantSlug: `tenant-${suffix}`,
                 hostname: `${hostHeader}`,
-                enableSubdomainRouting: false,
             });
 
             step = 'POST /auth/register (Tenant Admin self-registration)';
