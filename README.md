@@ -1,4 +1,6 @@
 # DSMS-Server
+Multi-tenant Driving School Management System (SaaS) — server codebase
+
 Driving School Management System server codebase
 
 ## Infrastructure Docs
@@ -13,6 +15,8 @@ Driving School Management System server codebase
 2. Start the local infrastructure and server with `sh scripts/local-dev.sh dev` on a POSIX shell, or `powershell -File scripts/local-dev.ps1 dev` on Windows.
 3. The local-dev wrappers load the real `.env`, derive the container-only values such as `DOCKER_DATABASE_URL`, and then invoke Compose. That keeps the compose file free of hardcoded fallback credentials and URLs.
 4. Use `sh scripts/local-dev.sh up`, `down`, `restart`, `logs`, `status`, `db-shell`, `redis-cli`, `generate`, `migrate`, `studio`, `build`, `test`, or `reset-db` as needed. The PowerShell wrapper exposes the same commands.
+5. Tenant-aware requests are resolved from the incoming hostname. The server also exposes `GET /config`, which returns the resolved `apiBaseUrl` for the current host so web and mobile clients can hydrate their runtime API config from the same origin they are using.
+6. Set `ENABLE_SUBDOMAIN_ROUTING=true` only when you want hostname-based tenant resolution. If the variable is missing or `false`, the server follows normal routing and skips subdomain tenant parsing.
 
 ## Docker
 

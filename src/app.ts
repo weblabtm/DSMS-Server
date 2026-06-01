@@ -79,7 +79,12 @@ export class ServerApplication {
             });
         });
 
+        this.app.get('/config', this.clientConfigHandler.bind(this));
+
         this.app.get('/health', this.healthCheckHandler);
+
+        // Public slug availability check so registration can probe before authentication exists.
+        this.app.get('/tenant/slug/:slug/availability', this.tenantController.checkSlugAvailability.bind(this.tenantController));
 
         const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware);
         this.app.use('/auth', authRouter);
@@ -104,11 +109,32 @@ export class ServerApplication {
         this.app.use(this.errorHandler);
     }
 
+    private isOriginAllowed(origin: string): boolean {
+        if (this.allowedOrigins.has('*') || this.allowedOrigins.has(origin)) {
+            return true;
+        }
+
+        for (const allowedOrigin of this.allowedOrigins) {
+            if (!allowedOrigin.includes('*')) {
+                continue;
+            }
+
+            const escapedPattern = allowedOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+            const originPattern = new RegExp(`^${escapedPattern}$`);
+
+            if (originPattern.test(origin)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private createCorsMiddleware() {
         return (request: Request, response: Response, next: NextFunction) => {
             const origin = request.headers.origin;
 
-            if (typeof origin === 'string' && (this.allowedOrigins.has('*') || this.allowedOrigins.has(origin))) {
+            if (typeof origin === 'string' && this.isOriginAllowed(origin)) {
                 response.setHeader('Access-Control-Allow-Origin', origin);
                 response.setHeader('Vary', 'Origin');
             }
@@ -162,6 +188,13 @@ export class ServerApplication {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    private clientConfigHandler(request: Request, response: Response): void {
+        response.status(200).json({
+            apiBaseUrl: `${request.protocol}://${request.get('host') ?? 'localhost'}`,
+            hostname: request.hostname,
+        });
     }
 
     private notFoundHandler(_request: Request, response: Response): void {

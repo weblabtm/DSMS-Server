@@ -21,6 +21,10 @@ export class InMemoryTenantDao implements TenantDao {
         return this.store.get(id);
     }
 
+    public async findBySlug(slug: string): Promise<TenantRecord | undefined> {
+        return Array.from(this.store.values()).find((tenant) => tenant.slug === slug);
+    }
+
     public async list(): Promise<TenantRecord[]> {
         return Array.from(this.store.values());
     }

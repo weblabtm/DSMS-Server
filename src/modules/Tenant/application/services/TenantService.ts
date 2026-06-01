@@ -4,7 +4,25 @@ import type { PrismaClient } from '../../../../generated/prisma/client.js';
 
 export type CreateTenantInput = {
     name: string;
+    slug: string;
     tenantAdminIdentifier: string;
+};
+
+const RESERVED_TENANT_SLUGS = new Set(['admin', 'app', 'api', 'www', 'test', 'dsms', 'root', 'saas', 'server', 'localhost']);
+
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/;
+
+const normalizeTenantSlug = (slug: string): string => {
+    return slug
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+};
+
+const isTenantSlugFormatValid = (slug: string): boolean => {
+    return slug.length >= 3 && slug.length <= 63 && SLUG_PATTERN.test(slug);
 };
 
 export class TenantService {
@@ -20,8 +38,50 @@ export class TenantService {
         return delegate;
     }
 
+    public normalizeSlug(slug: string): string {
+        return normalizeTenantSlug(slug);
+    }
+
+    public async isSlugAvailable(slug: string): Promise<{ slug: string; available: boolean; reason?: 'invalid' | 'reserved' | 'taken' }> {
+        const normalized = normalizeTenantSlug(slug);
+
+        if (!normalized || !isTenantSlugFormatValid(normalized)) {
+            return { slug: normalized, available: false, reason: 'invalid' };
+        }
+
+        if (RESERVED_TENANT_SLUGS.has(normalized)) {
+            return { slug: normalized, available: false, reason: 'reserved' };
+        }
+
+        if (this.prismaClient) {
+            const tenantDelegate = this.getTenantDelegate();
+            const existing = await tenantDelegate.findFirst({ where: { slug: normalized } });
+
+            if (existing) {
+                return { slug: normalized, available: false, reason: 'taken' };
+            }
+        } else {
+            const existing = await this.tenantDao.findBySlug(normalized);
+
+            if (existing) {
+                return { slug: normalized, available: false, reason: 'taken' };
+            }
+        }
+
+        return { slug: normalized, available: true };
+    }
+
     public async createTenant(input: CreateTenantInput) {
         const id = `tenant-${randomUUID()}`;
+        const slug = normalizeTenantSlug(input.slug);
+
+        if (!slug || !isTenantSlugFormatValid(slug)) {
+            throw new Error('Invalid tenant slug');
+        }
+
+        if (RESERVED_TENANT_SLUGS.has(slug)) {
+            throw new Error('Tenant slug is reserved');
+        }
 
         if (this.prismaClient) {
             const tenantDelegate = this.getTenantDelegate();
@@ -41,16 +101,28 @@ export class TenantService {
                 throw new Error('Tenant Admin account is already assigned to a tenant');
             }
 
-            const created = await tenantDelegate.create({ data: { id, name: input.name, isActive: true } });
+            const existingTenant = await tenantDelegate.findFirst({ where: { slug } });
+
+            if (existingTenant) {
+                throw new Error('Tenant slug is already in use');
+            }
+
+            const created = await tenantDelegate.create({ data: { id, name: input.name, slug, isActive: true } });
 
             await (this.prismaClient as any).authUser.update({
                 where: { id: tenantAdmin.id },
-                data: { tenantId: id },
+                data: { tenantId: slug },
+            });
+
+            await (this.prismaClient as any).authSession.updateMany({
+                where: { userId: tenantAdmin.id, revokedAt: null },
+                data: { tenantId: slug },
             });
 
             return {
                 id: created.id,
                 name: created.name,
+                slug: created.slug ?? slug,
                 isActive: created.isActive,
                 createdAt: new Date(created.createdAt as string),
                 updatedAt: new Date(created.updatedAt as string),
@@ -70,6 +142,7 @@ export class TenantService {
             return {
                 id: found.id,
                 name: found.name,
+                slug: found.slug ?? null,
                 isActive: found.isActive,
                 createdAt: new Date(found.createdAt as string),
                 updatedAt: new Date(found.updatedAt as string),
@@ -87,10 +160,36 @@ export class TenantService {
         if (this.prismaClient) {
             const tenantDelegate = this.getTenantDelegate();
             const rows = await tenantDelegate.findMany();
-            return rows.map((r: any) => ({ id: r.id, name: r.name, isActive: r.isActive, createdAt: new Date(r.createdAt as string), updatedAt: new Date(r.updatedAt as string) }));
+            return rows.map((r: any) => ({ id: r.id, name: r.name, slug: r.slug ?? null, isActive: r.isActive, createdAt: new Date(r.createdAt as string), updatedAt: new Date(r.updatedAt as string) }));
         }
 
         return this.tenantDao.list();
+    }
+
+    public async getTenantBySlug(slug: string) {
+        const normalized = normalizeTenantSlug(slug);
+
+        if (!normalized) {
+            return null;
+        }
+
+        if (this.prismaClient) {
+            const tenantDelegate = this.getTenantDelegate();
+            const found = await tenantDelegate.findFirst({ where: { slug: normalized } });
+
+            if (!found) return null;
+
+            return {
+                id: found.id,
+                name: found.name,
+                slug: found.slug ?? null,
+                isActive: found.isActive,
+                createdAt: new Date(found.createdAt as string),
+                updatedAt: new Date(found.updatedAt as string),
+            };
+        }
+
+        return this.tenantDao.findBySlug(normalized);
     }
 
     public async updateTenant(id: string, patch: { name?: string; isActive?: boolean }) {
@@ -102,6 +201,7 @@ export class TenantService {
             return {
                 id: updated.id,
                 name: updated.name,
+                slug: updated.slug ?? null,
                 isActive: updated.isActive,
                 createdAt: new Date(updated.createdAt as string),
                 updatedAt: new Date(updated.updatedAt as string),

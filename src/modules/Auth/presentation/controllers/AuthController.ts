@@ -13,10 +13,17 @@ export class AuthController {
 
     // POST /auth/login
     public async login(request: Request, response: Response): Promise<void> {
-        const dto = AuthRequestMapper.toLoginRequestDto(request.body);
-        const session = await this.authService.login(dto);
+        try {
+            const dto = AuthRequestMapper.toLoginRequestDto(request.body);
+            const session = await this.authService.login(dto);
 
-        response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
+            response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const status = message.includes('Invalid credentials') ? 401 : 400;
+
+            response.status(status).json({ message });
+        }
     }
 
     // POST /auth/register
@@ -42,10 +49,15 @@ export class AuthController {
 
     // POST /auth/refresh
     public async refresh(request: Request, response: Response): Promise<void> {
-        const dto = AuthRequestMapper.toRefreshRequestDto(request.body);
-        const session = await this.authService.refresh(dto);
+        try {
+            const dto = AuthRequestMapper.toRefreshRequestDto(request.body);
+            const session = await this.authService.refresh(dto);
 
-        response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
+            response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            response.status(401).json({ message });
+        }
     }
 
     // POST /auth/logout

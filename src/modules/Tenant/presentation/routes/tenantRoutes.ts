@@ -7,6 +7,12 @@ export const createTenantRouter = (controller: TenantController) => {
     // POST /tenant/ - create tenant (with adminAccount)
     router.post('/', controller.create.bind(controller));
 
+    // GET /tenant/slug/:slug/availability - check slug availability
+    router.get('/slug/:slug/availability', controller.checkSlugAvailability.bind(controller));
+
+    // GET /tenant/slug/:slug - find tenant by slug
+    router.get('/slug/:slug', controller.getBySlug.bind(controller));
+
     // GET /tenant/ - list
     router.get('/', controller.list.bind(controller));
 

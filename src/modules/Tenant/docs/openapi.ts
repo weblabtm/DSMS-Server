@@ -10,7 +10,7 @@ export const tenantOpenApi = {
             post: {
                 tags: ['Tenant'],
                 summary: 'Create a tenant',
-                description: 'Creates a new tenant. Requires Super Admin or Tenant Admin. The request must include minimal tenant data and an existing `Tenant Admin` account identifier. The server links that account to the newly created tenant.',
+                description: 'Creates a new tenant. Requires Super Admin or Tenant Admin. The request must include minimal tenant data, a unique tenant slug, and an existing `Tenant Admin` account identifier. The server links that account to the newly created tenant and persists the slug for wildcard routing.',
                 security: [{ bearerAuth: [] }],
                 requestBody: {
                     required: true,
@@ -18,9 +18,10 @@ export const tenantOpenApi = {
                         'application/json': {
                             schema: {
                                 type: 'object',
-                                required: ['name', 'tenantAdminIdentifier'],
+                                required: ['name', 'slug', 'tenantAdminIdentifier'],
                                 properties: {
                                     name: { type: 'string' },
+                                    slug: { type: 'string', description: 'Tenant slug used for wildcard subdomain routing.' },
                                     tenantAdminIdentifier: {
                                         type: 'string',
                                         description: 'Identifier of an existing account with role `Tenant Admin` that is not yet assigned to a tenant.',
@@ -32,6 +33,7 @@ export const tenantOpenApi = {
                                     summary: 'Create tenant and attach existing Tenant Admin',
                                     value: {
                                         name: 'Acme Academy',
+                                        slug: 'acme',
                                         tenantAdminIdentifier: 'admin@acme.com',
                                     },
                                 },
@@ -52,6 +54,22 @@ export const tenantOpenApi = {
                 responses: {
                     200: { description: 'List of tenants' },
                 },
+            },
+        },
+        '/tenant/slug/{slug}/availability': {
+            get: {
+                tags: ['Tenant'],
+                summary: 'Check tenant slug availability',
+                parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
+                responses: { 200: { description: 'Slug availability result' } },
+            },
+        },
+        '/tenant/slug/{slug}': {
+            get: {
+                tags: ['Tenant'],
+                summary: 'Get tenant by slug',
+                parameters: [{ name: 'slug', in: 'path', required: true, schema: { type: 'string' } }],
+                responses: { 200: { description: 'Tenant details' }, 404: { description: 'Not found' } },
             },
         },
         '/tenant/{id}': {
