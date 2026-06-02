@@ -15,6 +15,7 @@ Handles in-app and external notifications, templates, and delivery rules.
 - Keep notification content and delivery logic here.
 - Avoid embedding business workflows from other modules into notifications.
 - Notifications should be triggered by events, not direct rule duplication.
+- **In-App Integration Only**: All external module integration must occur exclusively through in-app object method calls (using `SmsNotificationSender.send(notification)`). Do not attempt to invoke HTTP endpoints to queue notifications, as these are unexposed.
 
 **Module: Notification**
 
