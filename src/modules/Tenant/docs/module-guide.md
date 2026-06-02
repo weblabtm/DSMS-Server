@@ -12,3 +12,5 @@ Folder structure (required)
 
 Practical rules
 - Enforce tenant isolation on queries and use tenant-aware middleware for requests.
+- Resolve tenant context from the incoming hostname before auth and controller logic runs.
+- Keep the public client config response aligned with the request host so web and mobile apps can derive the correct API base URL.

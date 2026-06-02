@@ -15,6 +15,7 @@
     "seed:rbac": "tsx src/scripts/seed-rbac.ts",
     "seed:super-admin": "tsx src/scripts/bootstrap-super-admin.ts",
     "check:supabase-direct": "tsx src/scripts/check-supabase-direct.ts",
+    "remove-tenant": "tsx src/scripts/remove-tenant-account.ts",
     "prisma:build-schema": "node scripts/build-prisma-schema.js",
     "prisma:generate": "npm run prisma:build-schema && prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate:dev": "npm run prisma:build-schema && prisma migrate dev --schema=prisma/schema.prisma",

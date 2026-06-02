@@ -22,6 +22,7 @@ export type TenantHttpFixtures = {
     };
     createTenant: {
         name: string;
+        slug: string;
         tenantAdminIdentifier: string;
     };
 };
@@ -46,6 +47,7 @@ export const createTenantHttpFixtures = (suffix: string): TenantHttpFixtures => 
     },
     createTenant: {
         name: `Tenant ${suffix}`,
+        slug: `tenant-${suffix}`,
         tenantAdminIdentifier: `tenant-admin-${suffix}@example.com`,
     },
 });
