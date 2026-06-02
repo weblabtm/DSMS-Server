@@ -52,6 +52,18 @@ export class EnvironmentConfig {
 
     public readonly enableSwaggerDocs: boolean;
 
+    public readonly smsProviderType: 'twilio' | 'console';
+
+    public readonly smsCallbackBaseUrl: string;
+
+    public readonly twilioAccountSid: string;
+
+    public readonly twilioAuthToken: string;
+
+    public readonly twilioFromNumber: string;
+
+    public readonly twilioValidateSignature: boolean;
+
     public constructor(env: NodeJS.ProcessEnv = process.env) {
         this.port = parsePort(env.PORT, 3000);
         this.allowedOrigins = parseList(env.ALLOWED_ORIGINS);
@@ -67,6 +79,14 @@ export class EnvironmentConfig {
         this.minioRegion = env.MINIO_REGION ?? 'us-east-1';
         this.minioBucketPolicy = env.MINIO_BUCKET_POLICY === 'public-read' ? 'public-read' : 'private';
         this.enableSwaggerDocs = String(env.ENABLE_SWAGGER_DOCS ?? '').toLowerCase() === 'true';
+
+        // Outbound SMS & Twilio Setup
+        this.smsProviderType = (env.SMS_PROVIDER_TYPE === 'twilio' ? 'twilio' : 'console') as 'twilio' | 'console';
+        this.smsCallbackBaseUrl = env.SMS_CALLBACK_BASE_URL ?? 'http://localhost:3000';
+        this.twilioAccountSid = env.TWILIO_ACCOUNT_SID ?? '';
+        this.twilioAuthToken = env.TWILIO_AUTH_TOKEN ?? '';
+        this.twilioFromNumber = env.TWILIO_FROM_NUMBER ?? '';
+        this.twilioValidateSignature = parseBoolean(env.TWILIO_VALIDATE_SIGNATURE, false);
     }
 
     public static fromProcessEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {

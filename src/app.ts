@@ -17,6 +17,14 @@ import { TenantController } from './modules/Tenant/presentation/controllers/Tena
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
 
+// SMS Notification Module Imports
+import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
+import { TwilioSmsProvider } from './modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
+import { SmsNotificationService } from './modules/Notification/application/services/SmsNotificationService.js';
+import { SmsNotificationController } from './modules/Notification/presentation/controllers/SmsNotificationController.js';
+import { createNotificationRouter } from './modules/Notification/presentation/routes/notificationRoutes.js';
+import { SmsRetryWorker } from './modules/Notification/application/workers/SmsRetryWorker.js';
+
 type ServiceHealth = {
     status: 'connected' | 'disconnected';
     error?: string;
@@ -36,6 +44,7 @@ export class ServerApplication {
 
     private readonly authController: AuthController;
     private readonly tenantController: TenantController;
+    private readonly smsNotificationController: SmsNotificationController;
     private readonly authenticationMiddleware: AuthenticationMiddleware;
 
     public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
@@ -54,6 +63,34 @@ export class ServerApplication {
         const tenantDao = new InMemoryTenantDao();
         const tenantService = new TenantService(tenantDao as any, prismaClient ?? undefined);
         this.tenantController = new TenantController(tenantService);
+
+        // SMS Gateway Module
+        const smsProvider = environment.smsProviderType === 'twilio'
+            ? new TwilioSmsProvider({
+                accountSid: environment.twilioAccountSid,
+                authToken: environment.twilioAuthToken,
+                fromNumber: environment.twilioFromNumber,
+              })
+            : new ConsoleSmsProvider();
+
+        const smsService = new SmsNotificationService(
+            prismaClient as any,
+            smsProvider,
+            environment.smsCallbackBaseUrl
+        );
+
+        this.smsNotificationController = new SmsNotificationController(
+            smsService,
+            environment.twilioAuthToken,
+            environment.twilioValidateSignature,
+            environment.smsCallbackBaseUrl
+        );
+
+        if (prismaClient) {
+            const smsRetryWorker = new SmsRetryWorker(smsService);
+            smsRetryWorker.start();
+            this.app.locals.smsRetryWorker = smsRetryWorker;
+        }
 
         this.registerMiddleware();
         this.registerRoutes();

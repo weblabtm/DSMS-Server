@@ -73,6 +73,10 @@ class ServerBootstrap {
     }
 
     private async stop(): Promise<void> {
+        if (this.application.locals.smsRetryWorker) {
+            this.application.locals.smsRetryWorker.stop();
+        }
+
         await new Promise<void>((resolve, reject) => {
             if (!this.httpServer) {
                 resolve();
