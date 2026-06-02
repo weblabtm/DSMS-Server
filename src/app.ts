@@ -40,6 +40,7 @@ export class ServerApplication {
 
     public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
         this.app = express();
+        this.app.set('trust proxy', true);
         this.allowedOrigins = new Set(environment.allowedOrigins);
 
         const authDao = prismaClient ? new PrismaAuthDao(prismaClient) : new InMemoryAuthDao();
