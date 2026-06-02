@@ -77,6 +77,10 @@ class ServerBootstrap {
             this.application.locals.smsRetryWorker.stop();
         }
 
+        if (this.application.locals.emailRetryWorker) {
+            this.application.locals.emailRetryWorker.stop();
+        }
+
         await new Promise<void>((resolve, reject) => {
             if (!this.httpServer) {
                 resolve();

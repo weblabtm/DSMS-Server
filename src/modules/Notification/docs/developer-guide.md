@@ -74,44 +74,31 @@ class AccountService {
 }
 ```
 
----
+## How to Send an Email Notification
 
-## Extending with a New Notification Channel (e.g. Email)
+To send an Email notification from other modules, import and use the polymorphic `NotificationSender` abstraction parameterized with `EmailNotification`:
 
-Thanks to the **Open-Closed Principle**, you can add email notifications without modifying any SMS code.
-
-### Step 1: Create the domain subclasses
-
-Create `EmailNotification.ts`:
 ```typescript
-import { Notification } from './Notification.js';
+import { EmailNotification } from '../Notification/domain/EmailNotification.js';
+import { EmailNotificationSender } from '../Notification/application/services/EmailNotificationSender.js';
 
-export class EmailNotification extends Notification {
-    public override readonly type = 'email';
-    
+class InvitationService {
     public constructor(
-        recipientEmail: string,
-        body: string,
-        public readonly subject: string,
-        tenantId?: string,
-        branchId?: string
-    ) {
-        super(recipientEmail, body, tenantId, branchId);
-    }
-}
-```
+        private readonly emailSender: EmailNotificationSender
+    ) {}
 
-### Step 2: Implement the sender
+    public async sendWelcomeEmail(emailAddress: string, name: string): Promise<void> {
+        // 1. Create your concrete EmailNotification subclass
+        const email = new EmailNotification(
+            emailAddress,
+            `<h1>Welcome to DSMS!</h1><p>Hi ${name}, your account is successfully verified.</p>`,
+            'Welcome to Driving School Management System!',
+            'tenant-123',
+            'branch-456'
+        );
 
-Create `EmailNotificationSender.ts`:
-```typescript
-import { NotificationSender } from '../../domain/NotificationSender.js';
-import { EmailNotification } from '../../domain/EmailNotification.js';
-
-export class EmailNotificationSender extends NotificationSender<EmailNotification> {
-    public async send(notification: EmailNotification): Promise<void> {
-        // Put your SMTP/SendGrid delivery logic here
-        console.log(`Sending email to ${notification.recipient} with subject: ${notification.subject}`);
+        // 2. Dispatch polymorphically using the sender
+        await this.emailSender.send(email);
     }
 }
 ```

@@ -118,6 +118,29 @@ enum PermissionScope {
 }
 
 
+// ===== src\modules\Notification\prisma\EmailMessage.prisma =====
+model EmailMessage {
+  id                String    @id @default(cuid())
+  to                String
+  subject           String
+  body              String    @db.Text
+  status            String    // 'PENDING', 'SENT', 'FAILED'
+  providerMessageId String?   @unique
+  errorMessage      String?
+  retryCount        Int       @default(0)
+  maxRetries        Int       @default(3)
+  nextRetryAt       DateTime?
+  tenantId          String?
+  branchId          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([nextRetryAt])
+  @@index([tenantId, branchId])
+}
+
+
 // ===== src\modules\Notification\prisma\SmsMessage.prisma =====
 model SmsMessage {
   id                String    @id @default(cuid())
