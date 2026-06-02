@@ -64,6 +64,14 @@ export class EnvironmentConfig {
 
     public readonly twilioValidateSignature: boolean;
 
+    public readonly emailProviderType: 'sendgrid' | 'console';
+
+    public readonly sendgridApiKey: string;
+
+    public readonly sendgridFromEmail: string;
+
+    public readonly sendgridFromName: string;
+
     public constructor(env: NodeJS.ProcessEnv = process.env) {
         this.port = parsePort(env.PORT, 3000);
         this.allowedOrigins = parseList(env.ALLOWED_ORIGINS);
@@ -87,6 +95,12 @@ export class EnvironmentConfig {
         this.twilioAuthToken = env.TWILIO_AUTH_TOKEN ?? '';
         this.twilioFromNumber = env.TWILIO_FROM_NUMBER ?? '';
         this.twilioValidateSignature = parseBoolean(env.TWILIO_VALIDATE_SIGNATURE, false);
+
+        // Outbound Email & SendGrid Setup
+        this.emailProviderType = (env.EMAIL_PROVIDER_TYPE === 'sendgrid' ? 'sendgrid' : 'console') as 'sendgrid' | 'console';
+        this.sendgridApiKey = env.SENDGRID_API_KEY ?? '';
+        this.sendgridFromEmail = env.SENDGRID_FROM_EMAIL ?? '';
+        this.sendgridFromName = env.SENDGRID_FROM_NAME ?? 'DSMS';
     }
 
     public static fromProcessEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {

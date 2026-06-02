@@ -25,6 +25,12 @@ import { SmsNotificationController } from './modules/Notification/presentation/c
 import { createNotificationRouter } from './modules/Notification/presentation/routes/notificationRoutes.js';
 import { SmsRetryWorker } from './modules/Notification/application/workers/SmsRetryWorker.js';
 
+// Email Notification Module Imports
+import { ConsoleEmailProvider } from './modules/Notification/infrastructure/email/ConsoleEmailProvider.js';
+import { SendGridEmailProvider } from './modules/Notification/infrastructure/email/SendGridEmailProvider.js';
+import { EmailNotificationService } from './modules/Notification/application/services/EmailNotificationService.js';
+import { EmailRetryWorker } from './modules/Notification/application/workers/EmailRetryWorker.js';
+
 type ServiceHealth = {
     status: 'connected' | 'disconnected';
     error?: string;
@@ -90,6 +96,26 @@ export class ServerApplication {
             const smsRetryWorker = new SmsRetryWorker(smsService);
             smsRetryWorker.start();
             this.app.locals.smsRetryWorker = smsRetryWorker;
+        }
+
+        // Email Gateway Module
+        const emailProvider = environment.emailProviderType === 'sendgrid'
+            ? new SendGridEmailProvider({
+                apiKey: environment.sendgridApiKey,
+                fromEmail: environment.sendgridFromEmail,
+                fromName: environment.sendgridFromName,
+              })
+            : new ConsoleEmailProvider();
+
+        const emailService = new EmailNotificationService(
+            prismaClient as any,
+            emailProvider
+        );
+
+        if (prismaClient) {
+            const emailRetryWorker = new EmailRetryWorker(emailService);
+            emailRetryWorker.start();
+            this.app.locals.emailRetryWorker = emailRetryWorker;
         }
 
         this.registerMiddleware();
