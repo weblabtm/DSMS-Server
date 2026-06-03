@@ -60,7 +60,16 @@ export class PrismaSessionService {
             try {
                 const isBlacklisted = await redis.get(`blacklist:refresh_token:${hash}`);
                 if (isBlacklisted) {
-                    return undefined;
+                    if (isBlacklisted === 'revoked') {
+                        return undefined;
+                    }
+                    if (isBlacklisted.startsWith('rotated:')) {
+                        const rotatedAt = parseInt(isBlacklisted.split(':')[1], 10);
+                        const now = Date.now();
+                        if (now - rotatedAt > 15000) {
+                            return undefined;
+                        }
+                    }
                 }
             } catch (err) {
                 // Non-fatal: continue if Redis fails
@@ -101,7 +110,28 @@ export class PrismaSessionService {
             try {
                 const isBlacklisted = await redis.get(`blacklist:refresh_token:${hash}`);
                 if (isBlacklisted) {
-                    throw new Error('Refresh token is not active');
+                    if (isBlacklisted === 'revoked') {
+                        throw new Error('Refresh token is not active');
+                    }
+                    if (isBlacklisted.startsWith('rotated:')) {
+                        const rotatedAt = parseInt(isBlacklisted.split(':')[1], 10);
+                        const now = Date.now();
+                        if (now - rotatedAt > 15000) {
+                            // Replay attack! Revoke the entire session.
+                            const existingRow = await (this.prisma as any).authSession.findFirst({
+                                where: {
+                                    OR: [
+                                        { refreshTokenHash: hash },
+                                        { previousTokenHash: hash }
+                                    ]
+                                }
+                            });
+                            if (existingRow) {
+                                await this.revokeSession(existingRow.id);
+                            }
+                            throw new Error('Refresh token is not active');
+                        }
+                    }
                 }
             } catch (err) {
                 // Non-fatal
@@ -185,6 +215,18 @@ export class PrismaSessionService {
                 expiresAt: newExpires,
             },
         });
+
+        // Blacklist the old refresh token in Redis as rotated
+        const redisClient = this.redisConnection?.getClient();
+        if (redisClient) {
+            try {
+                await redisClient.set(`blacklist:refresh_token:${hash}`, `rotated:${Date.now()}`, {
+                    EX: this.refreshTokenTtlSeconds
+                });
+            } catch (err) {
+                // Non-fatal
+            }
+        }
 
         let roles: RoleName[] = [];
         try {
