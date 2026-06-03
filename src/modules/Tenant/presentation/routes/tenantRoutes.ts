@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { TenantController } from '../controllers/TenantController.js';
-import type { AuthorizationMiddleware } from '../../Auth/application/middleware/AuthorizationMiddleware.js';
+import type { AuthorizationMiddleware } from '../../../Auth/application/middleware/AuthorizationMiddleware.js';
 
 export const createTenantRouter = (controller: TenantController, auth: AuthorizationMiddleware) => {
     const router = Router();
