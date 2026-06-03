@@ -1,0 +1,16 @@
+model AuthSession {
+  id              String   @id @default(cuid())
+  userId          String
+  accessTokenJti  String   @unique
+  refreshTokenHash String   @unique
+  tokenVersion    Int      @default(0)
+  tenantId        String?
+  branchId        String?
+  revokedAt       DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tenantId, branchId])
+}

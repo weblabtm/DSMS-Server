@@ -1,19 +1,150 @@
-name: Server CI
+name: CI
 
 on:
   push:
-    branches:
-      - dev
-      - main
+    branches: [ dev, main, master ]
   pull_request:
-    branches:
-      - dev
-      - main
+    branches: [ dev, main, master ]
 
 jobs:
-  build:
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: dsms
+          POSTGRES_PASSWORD: dsms
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dsms"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Create isolated test databases
+        env:
+          PGPASSWORD: dsms
+        run: |
+          psql -h 127.0.0.1 -U dsms -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'dsms_integration'" | grep -q 1 || psql -h 127.0.0.1 -U dsms -d postgres -c "CREATE DATABASE dsms_integration"
+          psql -h 127.0.0.1 -U dsms -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'dsms_e2e'" | grep -q 1 || psql -h 127.0.0.1 -U dsms -d postgres -c "CREATE DATABASE dsms_e2e"
+
+      - name: Vercel build
+        run: npm run vercel-build
+
+      - name: Build Prisma schema & generate client
+        run: |
+          npm run prisma:build-schema
+          npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Apply migrations to Supabase (PROD_DATABASE_URL)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Seed RBAC to Supabase
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -f dist/scripts/seed-rbac.js ]; then
+            node dist/scripts/seed-rbac.js
+          else
+            npx tsx src/scripts/seed-rbac.ts
+          fi
+
+      - name: Bootstrap Super Admin to Supabase (optional)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          ENABLE_SUPER_ADMIN_BOOTSTRAP: ${{ secrets.ENABLE_SUPER_ADMIN_BOOTSTRAP }}
+          SUPER_ADMIN_IDENTIFIER: ${{ secrets.SUPER_ADMIN_IDENTIFIER }}
+          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+        run: |
+          if [ -f dist/scripts/bootstrap-super-admin.js ]; then
+            node dist/scripts/bootstrap-super-admin.js
+          else
+            npx tsx src/scripts/bootstrap-super-admin.ts
+          fi
+
+      - name: Apply migrations to integration DB
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms_integration
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Apply migrations to e2e DB
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms_e2e
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Run seeders in integration DB (if needed)
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms_integration
+        run: |
+          if [ -f dist/scripts/seed-rbac.js ]; then
+            node dist/scripts/seed-rbac.js
+          else
+            npx tsx src/scripts/seed-rbac.ts
+          fi
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms_integration
+          REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:integration
+
+      - name: Run e2e tests
+        env:
+          DATABASE_URL: postgresql://dsms:dsms@127.0.0.1:5432/dsms_e2e
+          REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:e2e
+
+      - name: Drop isolated test databases (always)
+        if: always()
+        env:
+          PGPASSWORD: dsms
+        run: |
+          psql -h 127.0.0.1 -U dsms -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('dsms_integration', 'dsms_e2e') AND pid <> pg_backend_pid();"
+          psql -h 127.0.0.1 -U dsms -d postgres -c "DROP DATABASE IF EXISTS dsms_integration;"
+          psql -h 127.0.0.1 -U dsms -d postgres -c "DROP DATABASE IF EXISTS dsms_e2e;"
+
+  build:
+    name: Build server
+    runs-on: ubuntu-latest
+    needs: test
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,15 +152,20 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
+          node-version: '22'
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Build server
-        run: npm run build
+      - name: Vercel build
+        run: npm run vercel-build

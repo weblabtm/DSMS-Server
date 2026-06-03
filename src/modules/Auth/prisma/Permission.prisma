@@ -1,0 +1,13 @@
+model Permission {
+  id         String           @id @default(cuid())
+  key        String           @unique
+  moduleName String
+  action     String
+  scope      PermissionScope
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([moduleName, action])
+}

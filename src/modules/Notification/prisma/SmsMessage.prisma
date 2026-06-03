@@ -1,0 +1,19 @@
+model SmsMessage {
+  id                String    @id @default(cuid())
+  to                String
+  body              String
+  status            String    // 'PENDING', 'SENT', 'DELIVERED', 'FAILED'
+  providerMessageId String?   @unique
+  errorMessage      String?
+  retryCount        Int       @default(0)
+  maxRetries        Int       @default(3)
+  nextRetryAt       DateTime?
+  tenantId          String?
+  branchId          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([nextRetryAt])
+  @@index([tenantId, branchId])
+}

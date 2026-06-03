@@ -1,0 +1,13 @@
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  tenantId  String?
+  branchId  String?
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, tenantId, branchId])
+  @@index([userId, tenantId, branchId])
+}

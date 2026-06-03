@@ -1,0 +1,3 @@
+ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "slug" TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "Tenant_slug_key" ON "Tenant"("slug");
