@@ -6,7 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 
 import { AccessContext } from '../../domain/AccessContext.js';
 import { TokenService } from '../services/TokenService.js';
-import { resolveTenantSlugFromHost } from '../../../../shared/utils/tenantResolver.js';
+import { resolveTenantSlug } from '../../../../shared/utils/tenantResolver.js';
 
 declare module 'express-serve-static-core' {
     interface Request {
@@ -29,7 +29,7 @@ export class AuthenticationMiddleware {
             const claims = this.tokenService.verifyAccessToken(token);
 
             // Dynamic Host-Based Tenant Boundary Check
-            const resolvedTenantSlug = resolveTenantSlugFromHost(request.headers.host);
+            const resolvedTenantSlug = resolveTenantSlug(request.headers);
             const isSuperAdmin = (claims.roles ?? []).includes('Super Admin');
 
             if (!isSuperAdmin && claims.tenantId && claims.tenantId !== resolvedTenantSlug) {
@@ -67,7 +67,7 @@ export class AuthenticationMiddleware {
             const claims = this.tokenService.verifyAccessToken(token);
 
             // Dynamic Host-Based Tenant Boundary Check
-            const resolvedTenantSlug = resolveTenantSlugFromHost(request.headers.host);
+            const resolvedTenantSlug = resolveTenantSlug(request.headers);
             const isSuperAdmin = (claims.roles ?? []).includes('Super Admin');
 
             if (!isSuperAdmin && claims.tenantId && claims.tenantId !== resolvedTenantSlug) {

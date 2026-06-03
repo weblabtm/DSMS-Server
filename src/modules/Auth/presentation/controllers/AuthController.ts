@@ -7,7 +7,7 @@ import type { Request, Response } from 'express';
 import { AuthService } from '../../application/services/AuthService.js';
 import { AuthRequestMapper } from '../mappers/AuthRequestMapper.js';
 import { AuthResponseMapper } from '../mappers/AuthResponseMapper.js';
-import { resolveTenantSlugFromHost } from '../../../../shared/utils/tenantResolver.js';
+import { resolveTenantSlug } from '../../../../shared/utils/tenantResolver.js';
 
 export class AuthController {
     public constructor(private readonly authService: AuthService) { }
@@ -17,7 +17,7 @@ export class AuthController {
         try {
             const dto = AuthRequestMapper.toLoginRequestDto(request.body);
             
-            const hostTenantSlug = resolveTenantSlugFromHost(request.headers?.host);
+            const hostTenantSlug = resolveTenantSlug(request.headers);
             if (hostTenantSlug) {
                 dto.tenantId = hostTenantSlug;
             }
@@ -37,7 +37,7 @@ export class AuthController {
     public async register(request: Request, response: Response): Promise<void> {
         const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
         
-        const hostTenantSlug = resolveTenantSlugFromHost(request.headers?.host);
+        const hostTenantSlug = resolveTenantSlug(request.headers);
         if (hostTenantSlug) {
             dto.tenantId = hostTenantSlug;
         }
