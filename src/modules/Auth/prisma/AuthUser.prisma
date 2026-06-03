@@ -2,7 +2,7 @@
 // may already have a Users table elsewhere; adapt accordingly.
 model AuthUser {
   id         String   @id @default(cuid())
-  identifier String
+  identifier String   @unique
   password   String
   tenantId   String?
   branchId   String?
@@ -10,6 +10,5 @@ model AuthUser {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([tenantId, identifier])
   @@index([tenantId, branchId])
 }

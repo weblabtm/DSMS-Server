@@ -26,15 +26,9 @@ export class PrismaAuthDao implements AuthDao {
     public constructor(private readonly prisma: PrismaClient) { }
 
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {
-        // Look up the user. They must match the identifier and either the requested tenant, or be tenant-less.
-        const user = await (this.prisma as any).authUser.findFirst({
-            where: {
-                identifier: credentials.identifier,
-                OR: [
-                    { tenantId: credentials.tenantId ?? null },
-                    { tenantId: null },
-                ],
-            },
+        // Look up the user globally by email since emails are globally unique.
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier: credentials.identifier },
         });
 
         if (!user) return null;
@@ -45,7 +39,8 @@ export class PrismaAuthDao implements AuthDao {
             return null;
         }
 
-        if (credentials.tenantId && user.tenantId && credentials.tenantId !== user.tenantId) {
+        // Validate tenant context: if the user is bound to a tenant, their login context must match.
+        if (user.tenantId && credentials.tenantId !== user.tenantId) {
             return null;
         }
 
@@ -64,12 +59,9 @@ export class PrismaAuthDao implements AuthDao {
     }
 
     public async register(account: AuthRegisterRequestDto): Promise<AuthPrincipalDto> {
-        // Check if user exists within the target tenant (or central scope if null)
-        const existing = await (this.prisma as any).authUser.findFirst({
-            where: {
-                identifier: account.identifier,
-                tenantId: account.tenantId ?? null,
-            },
+        // Check if user exists globally
+        const existing = await (this.prisma as any).authUser.findUnique({
+            where: { identifier: account.identifier },
         });
 
         if (existing) {
