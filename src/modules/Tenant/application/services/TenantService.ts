@@ -85,8 +85,8 @@ export class TenantService {
 
         if (this.prismaClient) {
             const tenantDelegate = this.getTenantDelegate();
-            const tenantAdmin = await (this.prismaClient as any).authUser.findUnique({
-                where: { identifier: input.tenantAdminIdentifier },
+            const tenantAdmin = await (this.prismaClient as any).authUser.findFirst({
+                where: { identifier: input.tenantAdminIdentifier, tenantId: null },
             });
 
             if (!tenantAdmin) {

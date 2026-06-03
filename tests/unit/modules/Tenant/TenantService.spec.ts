@@ -47,6 +47,12 @@ describe('TenantService', () => {
                     roles: ['Tenant Admin'],
                     tenantId: null,
                 }) : null),
+                findFirst: vi.fn(async ({ where }: any) => where.identifier === 'admin@acme' ? ({
+                    id: 'u1',
+                    identifier: 'admin@acme',
+                    roles: ['Tenant Admin'],
+                    tenantId: null,
+                }) : null),
                 update: vi.fn(async ({ where, data }: any) => ({
                     id: where.id,
                     tenantId: data.tenantId,
@@ -68,7 +74,7 @@ describe('TenantService', () => {
         expect(result.slug).toBe('acme');
         expect(result.isActive).toBe(true);
 
-        expect(mockPrisma.authUser.findUnique).toHaveBeenCalledWith({ where: { identifier: 'admin@acme' } });
+        expect(mockPrisma.authUser.findFirst).toHaveBeenCalledWith({ where: { identifier: 'admin@acme', tenantId: null } });
         expect(mockPrisma.tenant.create).toHaveBeenCalled();
         expect(mockPrisma.authUser.update).toHaveBeenCalledWith({
             where: { id: 'u1' },

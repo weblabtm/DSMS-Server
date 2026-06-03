@@ -17,7 +17,9 @@ export async function bootstrapSuperAdmin(prisma: PrismaClient, env: NodeJS.Proc
         throw new Error('SUPER_ADMIN_IDENTIFIER and SUPER_ADMIN_PASSWORD are required when ENABLE_SUPER_ADMIN_BOOTSTRAP=true');
     }
 
-    const existing = await (prisma as any).authUser.findUnique({ where: { identifier } });
+    const existing = await (prisma as any).authUser.findFirst({
+        where: { identifier, tenantId: null },
+    });
 
     if (existing) {
         const roles: string[] = existing.roles ?? [];

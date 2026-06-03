@@ -107,6 +107,8 @@ export class AuthService {
             if (targetRole !== 'Tenant Admin') {
                 throw new Error('Only Tenant Admin can self-register');
             }
+            // Explicitly clear tenantId for self-registering Tenant Admins (pending tenant creation)
+            account.tenantId = undefined;
         } else if (!this.canInviteRole(inviterRole, targetRole)) {
             throw new Error(`Role ${inviterRole} cannot create ${targetRole}`);
         }

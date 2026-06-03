@@ -26,8 +26,16 @@ export class PrismaAuthDao implements AuthDao {
     public constructor(private readonly prisma: PrismaClient) { }
 
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {
-        // `authUser` assumes a Prisma model named `AuthUser` (lower-cased in the client).
-        const user = await (this.prisma as any).authUser.findUnique({ where: { identifier: credentials.identifier } });
+        // Look up the user. They must match the identifier and either the requested tenant, or be tenant-less.
+        const user = await (this.prisma as any).authUser.findFirst({
+            where: {
+                identifier: credentials.identifier,
+                OR: [
+                    { tenantId: credentials.tenantId ?? null },
+                    { tenantId: null },
+                ],
+            },
+        });
 
         if (!user) return null;
 
@@ -56,8 +64,13 @@ export class PrismaAuthDao implements AuthDao {
     }
 
     public async register(account: AuthRegisterRequestDto): Promise<AuthPrincipalDto> {
-        // Create a new AuthUser row. In production, validate and hash passwords.
-        const existing = await (this.prisma as any).authUser.findUnique({ where: { identifier: account.identifier } });
+        // Check if user exists within the target tenant (or central scope if null)
+        const existing = await (this.prisma as any).authUser.findFirst({
+            where: {
+                identifier: account.identifier,
+                tenantId: account.tenantId ?? null,
+            },
+        });
 
         if (existing) {
             throw new Error('Account already exists');
