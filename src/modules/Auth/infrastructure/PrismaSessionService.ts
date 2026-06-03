@@ -4,6 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { CreateSessionInput, CreateSessionWithAccessJtiInput, SessionRecord } from '../application/services/SessionService.js';
+import type { RoleName } from '../domain/Role.js';
 
 export class PrismaSessionService {
     public constructor(private readonly prisma: PrismaClient, private readonly refreshTokenTtlSeconds = 60 * 60 * 24 * 30) { }
@@ -84,10 +85,24 @@ export class PrismaSessionService {
             data: { refreshTokenHash: newHash, expiresAt: newExpires },
         });
 
+        // AuthSession has no roles column — fetch current roles from AuthUser so the
+        // refreshed access token carries correct role claims for downstream RBAC guards.
+        let roles: RoleName[] = [];
+        try {
+            const user = await (this.prisma as any).authUser.findUnique({
+                where: { id: updated.userId },
+                select: { roles: true },
+            });
+            roles = (user?.roles as RoleName[]) ?? [];
+        } catch {
+            // Non-fatal: if the user lookup fails, issue a token with empty roles.
+            // The next request will be rejected at the role-guard level.
+        }
+
         return {
             sessionId: updated.id,
             userId: updated.userId,
-            roles: [],
+            roles,
             tenantId: updated.tenantId ?? undefined,
             branchId: updated.branchId ?? undefined,
             tokenVersion: updated.tokenVersion,

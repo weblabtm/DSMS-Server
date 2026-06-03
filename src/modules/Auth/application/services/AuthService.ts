@@ -122,16 +122,14 @@ export class AuthService {
         }));
     }
 
-    public logout(request: AuthLogoutRequestDto): void {
-        (async () => {
-            const session = await (this.dependencies.sessionService as any).findByRefreshToken(request.refreshToken);
+    public async logout(request: AuthLogoutRequestDto): Promise<void> {
+        const session = await (this.dependencies.sessionService as any).findByRefreshToken(request.refreshToken);
 
-            if (!session) {
-                return;
-            }
+        if (!session) {
+            return;
+        }
 
-            await (this.dependencies.sessionService as any).revokeSession(session.sessionId);
-        })();
+        await (this.dependencies.sessionService as any).revokeSession(session.sessionId);
     }
 
     public async refreshSession(refreshToken: string): Promise<AuthSessionBundle> {

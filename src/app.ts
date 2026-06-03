@@ -12,6 +12,7 @@ import { createAuthRouter } from './modules/Auth/presentation/routes/authRoutes.
 import { AuthenticationMiddleware } from './modules/Auth/application/middleware/AuthenticationMiddleware.js';
 import { createTenantRouter } from './modules/Tenant/presentation/routes/tenantRoutes.js';
 import { InMemoryTenantDao } from './modules/Tenant/infrastructure/InMemoryTenantDao.js';
+import { ForbiddenError } from './shared/errors/ForbiddenError.js';
 import { TenantService } from './modules/Tenant/application/services/TenantService.js';
 import { TenantController } from './modules/Tenant/presentation/controllers/TenantController.js';
 import type { PrismaClient } from './generated/prisma/client.js';
@@ -269,6 +270,13 @@ export class ServerApplication {
 
     private errorHandler(error: unknown, _request: Request, response: Response, _next: NextFunction): void {
         const prismaError = typeof error === 'object' && error !== null ? (error as { code?: string; message?: string }) : undefined;
+
+        if (error instanceof ForbiddenError) {
+            response.status(error.statusCode).json({
+                message: error.message,
+            });
+            return;
+        }
 
         if (prismaError?.code === 'P2021') {
             response.status(503).json({
