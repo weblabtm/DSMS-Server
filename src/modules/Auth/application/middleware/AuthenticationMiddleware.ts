@@ -32,7 +32,7 @@ export class AuthenticationMiddleware {
             const resolvedTenantSlug = resolveTenantSlug(request.headers);
             const isSuperAdmin = (claims.roles ?? []).includes('Super Admin');
 
-            if (!isSuperAdmin && claims.tenantId && claims.tenantId !== resolvedTenantSlug) {
+            if (!isSuperAdmin && claims.tenantId && resolvedTenantSlug && claims.tenantId !== resolvedTenantSlug) {
                 response.status(403).json({ message: 'Access denied: Tenant mismatch' });
                 return;
             }
@@ -70,7 +70,7 @@ export class AuthenticationMiddleware {
             const resolvedTenantSlug = resolveTenantSlug(request.headers);
             const isSuperAdmin = (claims.roles ?? []).includes('Super Admin');
 
-            if (!isSuperAdmin && claims.tenantId && claims.tenantId !== resolvedTenantSlug) {
+            if (!isSuperAdmin && claims.tenantId && resolvedTenantSlug && claims.tenantId !== resolvedTenantSlug) {
                 response.status(403).json({ message: 'Access denied: Tenant mismatch' });
                 return;
             }

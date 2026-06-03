@@ -39,8 +39,8 @@ export class PrismaAuthDao implements AuthDao {
             return null;
         }
 
-        // Validate tenant context: if the user is bound to a tenant, their login context must match.
-        if (user.tenantId && credentials.tenantId !== user.tenantId) {
+        // Validate tenant context: if the user is bound to a tenant, and a tenant scope is requested, they must match.
+        if (credentials.tenantId && user.tenantId && credentials.tenantId !== user.tenantId) {
             return null;
         }
 
