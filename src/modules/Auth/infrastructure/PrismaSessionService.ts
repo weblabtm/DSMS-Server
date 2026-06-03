@@ -1,16 +1,16 @@
-/**
- * Prisma-backed session manager. Persists refresh sessions to the `AuthSession` table.
- */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { CreateSessionInput, CreateSessionWithAccessJtiInput, SessionRecord } from '../application/services/SessionService.js';
 import type { RoleName } from '../domain/Role.js';
 
 export class PrismaSessionService {
-    public constructor(private readonly prisma: PrismaClient, private readonly refreshTokenTtlSeconds = 60 * 60 * 24 * 30) { }
+    public constructor(
+        private readonly prisma: PrismaClient,
+        private readonly secretKey: string,
+        private readonly refreshTokenTtlSeconds = 60 * 60 * 24 * 30
+    ) { }
 
     public async createSession(input: CreateSessionInput): Promise<SessionRecord> {
-        // Not used for DB-backed flows; prefer createSessionWithAccessJti so access jti is stored.
         return this.createSessionWithAccessJti({ ...input, accessTokenJti: '' as unknown as string });
     }
 
@@ -41,9 +41,10 @@ export class PrismaSessionService {
             tokenVersion: created.tokenVersion,
             refreshToken,
             refreshTokenHash: created.refreshTokenHash,
-            accessTokenJti: created.accessTokenJti ?? undefined,
+            previousTokenHash: created.previousTokenHash ?? undefined,
             createdAt: Math.floor(created.createdAt.getTime() / 1000),
             expiresAt: Math.floor(created.expiresAt.getTime() / 1000),
+            rotatedAt: Math.floor(created.updatedAt.getTime() / 1000),
         };
 
         return record;
@@ -52,7 +53,16 @@ export class PrismaSessionService {
     public async findByRefreshToken(refreshToken: string): Promise<SessionRecord | undefined> {
         const hash = this.hashToken(refreshToken);
 
-        const found = await (this.prisma as any).authSession.findFirst({ where: { refreshTokenHash: hash, revokedAt: null, expiresAt: { gt: new Date() } } });
+        const found = await (this.prisma as any).authSession.findFirst({
+            where: {
+                OR: [
+                    { refreshTokenHash: hash },
+                    { previousTokenHash: hash }
+                ],
+                revokedAt: null,
+                expiresAt: { gt: new Date() }
+            }
+        });
 
         if (!found) return undefined;
 
@@ -65,9 +75,10 @@ export class PrismaSessionService {
             tokenVersion: found.tokenVersion,
             refreshToken, // return the plain token the caller supplied
             refreshTokenHash: found.refreshTokenHash,
-            accessTokenJti: found.accessTokenJti ?? undefined,
+            previousTokenHash: found.previousTokenHash ?? undefined,
             createdAt: Math.floor(found.createdAt.getTime() / 1000),
             expiresAt: Math.floor(found.expiresAt.getTime() / 1000),
+            rotatedAt: Math.floor(found.updatedAt.getTime() / 1000),
         };
     }
 
@@ -76,17 +87,56 @@ export class PrismaSessionService {
 
         if (!existing) throw new Error('Refresh token is not active');
 
-        const newRefresh = randomUUID();
+        const hash = this.hashToken(refreshToken);
+        const now = Math.floor(Date.now() / 1000);
+
+        // Check if the token sent is the previous token
+        if (existing.refreshTokenHash !== hash && existing.previousTokenHash === hash) {
+            // Replay attack check
+            const rotatedAt = existing.rotatedAt ?? 0;
+            const GRACE_PERIOD_SECONDS = 15;
+
+            if (now - rotatedAt > GRACE_PERIOD_SECONDS) {
+                // Replay attack! Revoke the entire session.
+                await this.revokeSession(existing.sessionId);
+                throw new Error('Refresh token is not active');
+            }
+
+            // Within grace period: return the session record with the active refresh token
+            const activeRefreshToken = this.deriveNextToken(refreshToken);
+            
+            let roles: RoleName[] = [];
+            try {
+                const user = await (this.prisma as any).authUser.findUnique({
+                    where: { id: existing.userId },
+                    select: { roles: true },
+                });
+                roles = (user?.roles as RoleName[]) ?? [];
+            } catch {
+                // Non-fatal
+            }
+
+            return {
+                ...existing,
+                refreshToken: activeRefreshToken,
+                roles,
+            };
+        }
+
+        // Standard rotation:
+        const newRefresh = this.deriveNextToken(refreshToken);
         const newHash = this.hashToken(newRefresh);
-        const newExpires = new Date((Math.floor(Date.now() / 1000) + this.refreshTokenTtlSeconds) * 1000);
+        const newExpires = new Date((now + this.refreshTokenTtlSeconds) * 1000);
 
         const updated = await (this.prisma as any).authSession.update({
             where: { id: existing.sessionId },
-            data: { refreshTokenHash: newHash, expiresAt: newExpires },
+            data: {
+                previousTokenHash: hash,
+                refreshTokenHash: newHash,
+                expiresAt: newExpires,
+            },
         });
 
-        // AuthSession has no roles column — fetch current roles from AuthUser so the
-        // refreshed access token carries correct role claims for downstream RBAC guards.
         let roles: RoleName[] = [];
         try {
             const user = await (this.prisma as any).authUser.findUnique({
@@ -95,8 +145,7 @@ export class PrismaSessionService {
             });
             roles = (user?.roles as RoleName[]) ?? [];
         } catch {
-            // Non-fatal: if the user lookup fails, issue a token with empty roles.
-            // The next request will be rejected at the role-guard level.
+            // Non-fatal
         }
 
         return {
@@ -108,9 +157,10 @@ export class PrismaSessionService {
             tokenVersion: updated.tokenVersion,
             refreshToken: newRefresh,
             refreshTokenHash: updated.refreshTokenHash,
-            accessTokenJti: updated.accessTokenJti ?? undefined,
+            previousTokenHash: updated.previousTokenHash ?? undefined,
             createdAt: Math.floor(updated.createdAt.getTime() / 1000),
             expiresAt: Math.floor(updated.expiresAt.getTime() / 1000),
+            rotatedAt: Math.floor(updated.updatedAt.getTime() / 1000),
         };
     }
 
@@ -124,5 +174,9 @@ export class PrismaSessionService {
 
     private hashToken(token: string): string {
         return createHash('sha256').update(token).digest('hex');
+    }
+
+    private deriveNextToken(token: string): string {
+        return createHmac('sha256', this.secretKey).update(token).digest('hex');
     }
 }

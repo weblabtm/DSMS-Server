@@ -61,7 +61,7 @@ export class ServerApplication {
 
         const authDao = prismaClient ? new PrismaAuthDao(prismaClient) : new InMemoryAuthDao();
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
-        const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
+        const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret') : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
