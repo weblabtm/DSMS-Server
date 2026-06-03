@@ -84,10 +84,24 @@ export class PrismaSessionService {
             data: { refreshTokenHash: newHash, expiresAt: newExpires },
         });
 
+        // AuthSession has no roles column — fetch current roles from AuthUser so the
+        // refreshed access token carries correct role claims for downstream RBAC guards.
+        let roles: string[] = [];
+        try {
+            const user = await (this.prisma as any).authUser.findUnique({
+                where: { id: updated.userId },
+                select: { roles: true },
+            });
+            roles = user?.roles ?? [];
+        } catch {
+            // Non-fatal: if the user lookup fails, issue a token with empty roles.
+            // The next request will be rejected at the role-guard level.
+        }
+
         return {
             sessionId: updated.id,
             userId: updated.userId,
-            roles: [],
+            roles,
             tenantId: updated.tenantId ?? undefined,
             branchId: updated.branchId ?? undefined,
             tokenVersion: updated.tokenVersion,

@@ -158,23 +158,36 @@ describe('HTTP e2e smoke tests', () => {
             expect(createdTenant.name).toBe(fixtures.createTenant.name);
             expect(createdTenant.isActive).toBe(true);
 
-            step = 'GET /tenant';
+            // After POST /tenant the DB session is updated with the tenant's slug as tenantId.
+            // Refresh the token so the new access token carries the tenantId claim — required
+            // for scope-based authorization checks in GET/PATCH /tenant/:id.
+            step = 'POST /auth/refresh (post-tenant, to pick up tenantId in claims)';
+            const postTenantRefreshResponse = await requestJson(`${server.baseUrl}/auth/refresh`, {
+                method: 'POST',
+                headers: { host: hostHeader },
+                body: { refreshToken: refreshedSession.refreshToken },
+            });
+            expect(postTenantRefreshResponse.statusCode).toBe(200);
+            const postTenantSession = postTenantRefreshResponse.body as Record<string, unknown>;
+            expect(postTenantSession.accessToken).toBeTruthy();
+            const tenantScopedToken = String(postTenantSession.accessToken);
+            const postTenantRefreshToken = String(postTenantSession.refreshToken);
+
+            step = 'GET /tenant (expect 403 — Tenant Admin cannot list all tenants)';
             const listResponse = await requestJson(`${server.baseUrl}/tenant`, {
                 headers: {
                     host: hostHeader,
-                    authorization: `Bearer ${loginSession.accessToken}`,
+                    authorization: `Bearer ${tenantScopedToken}`,
                 },
             });
-            expect(listResponse.statusCode).toBe(200);
-            const tenantList = listResponse.body as Array<Record<string, unknown>>;
-            expect(Array.isArray(tenantList)).toBe(true);
-            expect(tenantList.some((item: any) => item.id === createdTenant.id)).toBe(true);
+            // Tenant Admin cannot list all tenants — only Super Admin can (authorization guard verified).
+            expect(listResponse.statusCode).toBe(403);
 
             step = 'GET /tenant/{id}';
             const getTenantResponse = await requestJson(`${server.baseUrl}/tenant/${createdTenant.id}`, {
                 headers: {
                     host: hostHeader,
-                    authorization: `Bearer ${loginSession.accessToken}`,
+                    authorization: `Bearer ${tenantScopedToken}`,
                 },
             });
             expect(getTenantResponse.statusCode).toBe(200);
@@ -186,7 +199,7 @@ describe('HTTP e2e smoke tests', () => {
                 method: 'PATCH',
                 headers: {
                     host: hostHeader,
-                    authorization: `Bearer ${loginSession.accessToken}`,
+                    authorization: `Bearer ${tenantScopedToken}`,
                 },
                 body: {
                     name: `${fixtures.createTenant.name}-updated`,
@@ -198,6 +211,7 @@ describe('HTTP e2e smoke tests', () => {
             expect(patchedTenant.name).toBe(`${fixtures.createTenant.name}-updated`);
             expect(patchedTenant.isActive).toBe(false);
 
+
             step = 'POST /auth/logout';
             const logoutResponse = await requestJson(`${server.baseUrl}/auth/logout`, {
                 method: 'POST',
@@ -205,7 +219,8 @@ describe('HTTP e2e smoke tests', () => {
                     host: hostHeader,
                 },
                 body: {
-                    refreshToken: refreshedSession.refreshToken,
+                    // Use the most recent refresh token; prior ones are consumed by rotation.
+                    refreshToken: postTenantRefreshToken,
                 },
             });
             expect(logoutResponse.statusCode).toBe(204);
