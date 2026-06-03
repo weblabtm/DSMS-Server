@@ -2,11 +2,13 @@ import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client.js';
 import type { CreateSessionInput, CreateSessionWithAccessJtiInput, SessionRecord } from '../application/services/SessionService.js';
 import type { RoleName } from '../domain/Role.js';
+import type { RedisConnection } from '../../../infrastructure/redis/redis-connection.js';
 
 export class PrismaSessionService {
     public constructor(
         private readonly prisma: PrismaClient,
         private readonly secretKey: string,
+        private readonly redisConnection?: RedisConnection | null,
         private readonly refreshTokenTtlSeconds = 60 * 60 * 24 * 30
     ) { }
 
@@ -53,12 +55,21 @@ export class PrismaSessionService {
     public async findByRefreshToken(refreshToken: string): Promise<SessionRecord | undefined> {
         const hash = this.hashToken(refreshToken);
 
+        const redis = this.redisConnection?.getClient();
+        if (redis) {
+            try {
+                const isBlacklisted = await redis.get(`blacklist:refresh_token:${hash}`);
+                if (isBlacklisted) {
+                    return undefined;
+                }
+            } catch (err) {
+                // Non-fatal: continue if Redis fails
+            }
+        }
+
         const found = await (this.prisma as any).authSession.findFirst({
             where: {
-                OR: [
-                    { refreshTokenHash: hash },
-                    { previousTokenHash: hash }
-                ],
+                refreshTokenHash: hash,
                 revokedAt: null,
                 expiresAt: { gt: new Date() }
             }
@@ -83,12 +94,50 @@ export class PrismaSessionService {
     }
 
     public async rotateRefreshToken(refreshToken: string): Promise<SessionRecord> {
-        const existing = await this.findByRefreshToken(refreshToken);
-
-        if (!existing) throw new Error('Refresh token is not active');
-
         const hash = this.hashToken(refreshToken);
+
+        const redis = this.redisConnection?.getClient();
+        if (redis) {
+            try {
+                const isBlacklisted = await redis.get(`blacklist:refresh_token:${hash}`);
+                if (isBlacklisted) {
+                    throw new Error('Refresh token is not active');
+                }
+            } catch (err) {
+                // Non-fatal
+            }
+        }
+
         const now = Math.floor(Date.now() / 1000);
+
+        // Find by either current or previous token hash
+        const existingRow = await (this.prisma as any).authSession.findFirst({
+            where: {
+                OR: [
+                    { refreshTokenHash: hash },
+                    { previousTokenHash: hash }
+                ],
+                revokedAt: null,
+                expiresAt: { gt: new Date() }
+            }
+        });
+
+        if (!existingRow) throw new Error('Refresh token is not active');
+
+        const existing: SessionRecord = {
+            sessionId: existingRow.id,
+            userId: existingRow.userId,
+            roles: [],
+            tenantId: existingRow.tenantId ?? undefined,
+            branchId: existingRow.branchId ?? undefined,
+            tokenVersion: existingRow.tokenVersion,
+            refreshToken,
+            refreshTokenHash: existingRow.refreshTokenHash,
+            previousTokenHash: existingRow.previousTokenHash ?? undefined,
+            createdAt: Math.floor(existingRow.createdAt.getTime() / 1000),
+            expiresAt: Math.floor(existingRow.expiresAt.getTime() / 1000),
+            rotatedAt: Math.floor(existingRow.updatedAt.getTime() / 1000),
+        };
 
         // Check if the token sent is the previous token
         if (existing.refreshTokenHash !== hash && existing.previousTokenHash === hash) {
@@ -169,7 +218,28 @@ export class PrismaSessionService {
     }
 
     public async revokeSession(sessionId: string): Promise<void> {
-        await (this.prisma as any).authSession.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
+        const session = await (this.prisma as any).authSession.update({
+            where: { id: sessionId },
+            data: { revokedAt: new Date() }
+        });
+
+        const redis = this.redisConnection?.getClient();
+        if (redis && session) {
+            try {
+                if (session.refreshTokenHash) {
+                    await redis.set(`blacklist:refresh_token:${session.refreshTokenHash}`, 'revoked', {
+                        EX: this.refreshTokenTtlSeconds
+                    });
+                }
+                if (session.previousTokenHash) {
+                    await redis.set(`blacklist:refresh_token:${session.previousTokenHash}`, 'revoked', {
+                        EX: this.refreshTokenTtlSeconds
+                    });
+                }
+            } catch (err) {
+                // Non-fatal
+            }
+        }
     }
 
     private hashToken(token: string): string {

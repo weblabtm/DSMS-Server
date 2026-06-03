@@ -17,6 +17,7 @@ import { TenantService } from './modules/Tenant/application/services/TenantServi
 import { TenantController } from './modules/Tenant/presentation/controllers/TenantController.js';
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
+import { RedisConnection } from './infrastructure/redis/redis-connection.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
@@ -54,14 +55,18 @@ export class ServerApplication {
     private readonly smsNotificationController: SmsNotificationController;
     private readonly authenticationMiddleware: AuthenticationMiddleware;
 
-    public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
+    public constructor(
+        private readonly environment: EnvironmentConfig,
+        prismaClient?: PrismaClient | null,
+        redisConnection?: RedisConnection | null
+    ) {
         this.app = express();
         this.app.set('trust proxy', true);
         this.allowedOrigins = new Set(environment.allowedOrigins);
 
         const authDao = prismaClient ? new PrismaAuthDao(prismaClient) : new InMemoryAuthDao();
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
-        const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret') : new SessionService();
+        const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret', redisConnection) : new SessionService();
         const authService = new AuthService({ tokenService, sessionService, authDao });
         this.authController = new AuthController(authService);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
