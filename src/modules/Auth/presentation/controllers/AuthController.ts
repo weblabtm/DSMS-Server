@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import { AuthService } from '../../application/services/AuthService.js';
 import { AuthRequestMapper } from '../mappers/AuthRequestMapper.js';
 import { AuthResponseMapper } from '../mappers/AuthResponseMapper.js';
+import { resolveTenantSlug } from '../../../../shared/utils/tenantResolver.js';
 
 export class AuthController {
     public constructor(private readonly authService: AuthService) { }
@@ -15,6 +16,12 @@ export class AuthController {
     public async login(request: Request, response: Response): Promise<void> {
         try {
             const dto = AuthRequestMapper.toLoginRequestDto(request.body);
+            
+            const hostTenantSlug = resolveTenantSlug(request.headers);
+            if (hostTenantSlug) {
+                dto.tenantId = hostTenantSlug;
+            }
+
             const session = await this.authService.login(dto);
 
             response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
@@ -29,6 +36,12 @@ export class AuthController {
     // POST /auth/register
     public async register(request: Request, response: Response): Promise<void> {
         const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
+        
+        const hostTenantSlug = resolveTenantSlug(request.headers);
+        if (hostTenantSlug) {
+            dto.tenantId = hostTenantSlug;
+        }
+
         const inviterRole = request.authContext?.roles[0];
 
         try {

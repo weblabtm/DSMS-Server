@@ -26,8 +26,10 @@ export class PrismaAuthDao implements AuthDao {
     public constructor(private readonly prisma: PrismaClient) { }
 
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {
-        // `authUser` assumes a Prisma model named `AuthUser` (lower-cased in the client).
-        const user = await (this.prisma as any).authUser.findUnique({ where: { identifier: credentials.identifier } });
+        // Look up the user globally by email since emails are globally unique.
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier: credentials.identifier },
+        });
 
         if (!user) return null;
 
@@ -37,6 +39,7 @@ export class PrismaAuthDao implements AuthDao {
             return null;
         }
 
+        // Validate tenant context: if the user is bound to a tenant, and a tenant scope is requested, they must match.
         if (credentials.tenantId && user.tenantId && credentials.tenantId !== user.tenantId) {
             return null;
         }
@@ -56,8 +59,10 @@ export class PrismaAuthDao implements AuthDao {
     }
 
     public async register(account: AuthRegisterRequestDto): Promise<AuthPrincipalDto> {
-        // Create a new AuthUser row. In production, validate and hash passwords.
-        const existing = await (this.prisma as any).authUser.findUnique({ where: { identifier: account.identifier } });
+        // Check if user exists globally
+        const existing = await (this.prisma as any).authUser.findUnique({
+            where: { identifier: account.identifier },
+        });
 
         if (existing) {
             throw new Error('Account already exists');

@@ -20,9 +20,12 @@ export type SessionRecord = {
     accessTokenJti?: string;
     // optional stored hash of the refresh token for persistent stores
     refreshTokenHash?: string;
+    previousTokenHash?: string;
     createdAt: number;
     expiresAt: number;
     revokedAt?: number;
+    previousRefreshToken?: string;
+    rotatedAt?: number;
 };
 
 export type CreateSessionInput = {
@@ -115,7 +118,16 @@ export class SessionService {
     }
 
     public async rotateRefreshToken(refreshToken: string): Promise<SessionRecord> {
-        const currentSession = await this.findByRefreshToken(refreshToken);
+        // Look up by current refresh token or previous refresh token directly in Sessions list
+        let currentSession: SessionRecord | undefined;
+        for (const session of this.sessionsById.values()) {
+            if (session.refreshToken === refreshToken || session.previousRefreshToken === refreshToken) {
+                if (!session.revokedAt && session.expiresAt > this.clock()) {
+                    currentSession = session;
+                    break;
+                }
+            }
+        }
 
         if (!currentSession) {
             throw new Error('Refresh token is not active');
@@ -127,6 +139,32 @@ export class SessionService {
             throw new Error('Session not found');
         }
 
+        const now = this.clock();
+
+        // Check if token being rotated is the previous refresh token
+        if (existingRecord.refreshToken !== refreshToken) {
+            if (existingRecord.previousRefreshToken === refreshToken) {
+                // Replay attack check
+                const rotatedAt = existingRecord.rotatedAt ?? 0;
+                const GRACE_PERIOD_SECONDS = 15;
+
+                if (now - rotatedAt > GRACE_PERIOD_SECONDS) {
+                    // Revoke entire session on replay outside grace period
+                    await this.revokeSession(existingRecord.sessionId);
+                    throw new Error('Refresh token is not active');
+                }
+                
+                // Within grace period: return the existing record with the already rotated new token
+                return { ...existingRecord };
+            } else {
+                throw new Error('Refresh token is not active');
+            }
+        }
+
+        // Standard rotation flow
+        if (existingRecord.previousRefreshToken) {
+            this.sessionIdsByRefreshToken.delete(existingRecord.previousRefreshToken);
+        }
         this.sessionIdsByRefreshToken.delete(refreshToken);
 
         const newRefresh = randomUUID();
@@ -134,8 +172,11 @@ export class SessionService {
             ...existingRecord,
             refreshToken: newRefresh,
             refreshTokenHash: this.hashToken(newRefresh),
+            previousTokenHash: this.hashToken(refreshToken),
+            previousRefreshToken: refreshToken,
+            rotatedAt: now,
             createdAt: existingRecord.createdAt,
-            expiresAt: this.clock() + this.refreshTokenTtlSeconds,
+            expiresAt: now + this.refreshTokenTtlSeconds,
         };
 
         this.sessionsById.set(rotatedSession.sessionId, rotatedSession);

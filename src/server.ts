@@ -128,7 +128,7 @@ const dependencyHealthProvider: DependencyHealthProvider = async () => {
     };
 };
 
-const appInstance = new ServerApplication(environment, databaseConnection.getClient());
+const appInstance = new ServerApplication(environment, databaseConnection.getClient(), redisConnection);
 
 appInstance.getApp().locals.dependencyHealthProvider = dependencyHealthProvider;
 appInstance.getApp().locals.storageService = storageService;

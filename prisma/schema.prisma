@@ -16,6 +16,7 @@ model AuthSession {
   userId          String
   accessTokenJti  String   @unique
   refreshTokenHash String   @unique
+  previousTokenHash String?
   tokenVersion    Int      @default(0)
   tenantId        String?
   branchId        String?
@@ -26,6 +27,7 @@ model AuthSession {
 
   @@index([userId])
   @@index([tenantId, branchId])
+  @@index([previousTokenHash])
 }
 
 

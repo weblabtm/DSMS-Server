@@ -45,7 +45,7 @@ export class TokenService {
 
     public constructor(private readonly secret: string, options: TokenServiceOptions = {}) {
         this.issuer = options.issuer ?? 'dsms-server';
-        this.accessTokenTtlSeconds = options.accessTokenTtlSeconds ?? 60 * 60;
+        this.accessTokenTtlSeconds = options.accessTokenTtlSeconds ?? 15 * 60;
         this.clock = options.clock ?? (() => Math.floor(Date.now() / 1000));
     }
 
@@ -68,13 +68,18 @@ export class TokenService {
     }
 
     public verifyAccessToken(token: string): AccessTokenClaims {
-        const [payloadPart, signaturePart] = token.split('.');
+        const parts = token.split('.');
 
-        if (!payloadPart || !signaturePart) {
+        if (parts.length !== 3) {
             throw new Error('Invalid access token');
         }
 
-        const expectedSignature = this.signPayload(payloadPart);
+        const [headerPart, payloadPart, signaturePart] = parts;
+        if (!headerPart || !payloadPart || !signaturePart) {
+            throw new Error('Invalid access token');
+        }
+
+        const expectedSignature = this.signPayload(`${headerPart}.${payloadPart}`);
         const providedSignature = Buffer.from(signaturePart, 'utf8');
         const computedSignature = Buffer.from(expectedSignature, 'utf8');
 
@@ -96,10 +101,11 @@ export class TokenService {
     }
 
     private signClaims(claims: AccessTokenClaims): string {
+        const header = this.base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
         const payload = this.base64UrlEncode(JSON.stringify(claims));
-        const signature = this.signPayload(payload);
+        const signature = this.signPayload(`${header}.${payload}`);
 
-        return `${payload}.${signature}`;
+        return `${header}.${payload}.${signature}`;
     }
 
     private signPayload(payload: string): string {

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EnvironmentConfig } from '../../src/config/environment.js';
 import { ServerApplication } from '../../src/app.js';
 import { DatabaseConnection } from '../../src/infrastructure/database/database-connection.js';
+import { RedisConnection } from '../../src/infrastructure/redis/redis-connection.js';
 import { createTenantHttpFixtures } from '../fixtures/http-fixtures.js';
 import { requestJson } from '../fixtures/http-client.js';
 
@@ -31,7 +32,10 @@ const startTestServer = async () => {
         ENABLE_SUPER_ADMIN_BOOTSTRAP: 'false',
     } as NodeJS.ProcessEnv);
 
-    const application = new ServerApplication(environment, prisma as never);
+    const redisConnection = new RedisConnection(environment.redisUrl);
+    await redisConnection.connect();
+
+    const application = new ServerApplication(environment, prisma as never, redisConnection);
     const app = application.getApp();
     const server = createServer(app);
 
@@ -52,6 +56,7 @@ const startTestServer = async () => {
                 server.close((error) => (error ? reject(error) : resolve()));
             });
 
+            await redisConnection.disconnect();
             await databaseConnection.disconnect();
         },
     };

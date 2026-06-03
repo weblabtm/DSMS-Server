@@ -10,6 +10,8 @@ import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.j
 import { PrismaAuthDao } from './modules/Auth/infrastructure/PrismaAuthDao.js';
 import { createAuthRouter } from './modules/Auth/presentation/routes/authRoutes.js';
 import { AuthenticationMiddleware } from './modules/Auth/application/middleware/AuthenticationMiddleware.js';
+import { PermissionGuard } from './modules/Auth/application/PermissionGuard.js';
+import { AuthorizationMiddleware } from './modules/Auth/application/middleware/AuthorizationMiddleware.js';
 import { createTenantRouter } from './modules/Tenant/presentation/routes/tenantRoutes.js';
 import { InMemoryTenantDao } from './modules/Tenant/infrastructure/InMemoryTenantDao.js';
 import { ForbiddenError } from './shared/errors/ForbiddenError.js';
@@ -17,13 +19,14 @@ import { TenantService } from './modules/Tenant/application/services/TenantServi
 import { TenantController } from './modules/Tenant/presentation/controllers/TenantController.js';
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
+import { RedisConnection } from './infrastructure/redis/redis-connection.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
 import { TwilioSmsProvider } from './modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
 import { SmsNotificationService } from './modules/Notification/application/services/SmsNotificationService.js';
 import { SmsNotificationController } from './modules/Notification/presentation/controllers/SmsNotificationController.js';
-import { createNotificationRouter } from './modules/Notification/presentation/routes/notificationRoutes.js';
+// import { createNotificationRouter } from './modules/Notification/presentation/routes/notificationRoutes.js';
 import { SmsRetryWorker } from './modules/Notification/application/workers/SmsRetryWorker.js';
 
 // Email Notification Module Imports
@@ -53,18 +56,25 @@ export class ServerApplication {
     private readonly tenantController: TenantController;
     private readonly smsNotificationController: SmsNotificationController;
     private readonly authenticationMiddleware: AuthenticationMiddleware;
+    private readonly authorizationMiddleware: AuthorizationMiddleware;
 
-    public constructor(private readonly environment: EnvironmentConfig, prismaClient?: PrismaClient | null) {
+    public constructor(
+        private readonly environment: EnvironmentConfig,
+        prismaClient?: PrismaClient | null,
+        redisConnection?: RedisConnection | null
+    ) {
         this.app = express();
         this.app.set('trust proxy', true);
         this.allowedOrigins = new Set(environment.allowedOrigins);
 
         const authDao = prismaClient ? new PrismaAuthDao(prismaClient) : new InMemoryAuthDao();
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
-        const sessionService = prismaClient ? new PrismaSessionService(prismaClient) : new SessionService();
-        const authService = new AuthService({ tokenService, sessionService, authDao });
+        const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret', redisConnection) : new SessionService();
+        const permissionGuard = new PermissionGuard();
+        const authService = new AuthService({ tokenService, sessionService, authDao, permissionGuard });
         this.authController = new AuthController(authService);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
+        this.authorizationMiddleware = new AuthorizationMiddleware(permissionGuard);
 
         // tenant module
         const tenantDao = new InMemoryTenantDao();
@@ -154,8 +164,16 @@ export class ServerApplication {
         const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware);
         this.app.use('/auth', authRouter);
 
-        const tenantRouter = createTenantRouter(this.tenantController);
+        const tenantRouter = createTenantRouter(this.tenantController, this.authorizationMiddleware);
         this.app.use('/tenant', this.authenticationMiddleware.handle.bind(this.authenticationMiddleware), tenantRouter);
+
+        // CRITICAL WARNING: Notification endpoints must NOT be exposed at any cost by mounting them in the app.
+        // As per the architecture (refer to developer-guide.md in the Notification module), notifications 
+        // must be triggered exclusively via in-app polymorphic NotificationSender method calls.
+        // DO NOT mount the notificationRouter or its associated middlewares.
+        //
+        // const notificationRouter = createNotificationRouter(this.smsNotificationController, this.authenticationMiddleware, this.authorizationMiddleware);
+        // this.app.use('/notifications', notificationRouter);
     }
 
     private registerDocumentation(): void {
