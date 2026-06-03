@@ -41,7 +41,10 @@ function extractSlugFromHostname(hostname: string): string | undefined {
         return undefined;
     }
 
-    const mainDomain = 'example.test';
+    const mainDomain = process.env.MAIN_DOMAIN || 'example.test';
+    if (hostname === mainDomain) {
+        return undefined;
+    }
     if (hostname.endsWith(`.${mainDomain}`)) {
         return hostname.slice(0, -(mainDomain.length + 1));
     }
@@ -52,6 +55,10 @@ function extractSlugFromHostname(hostname: string): string | undefined {
     // Fallback: if there are subdomains, take the first part
     const parts = hostname.split('.');
     if (parts.length > 2) {
+        // If using default Vercel domains (e.g. app-name.vercel.app) and no subdomain is present
+        if (hostname.endsWith('.vercel.app') && parts.length === 3) {
+            return undefined;
+        }
         return parts[0];
     }
 
