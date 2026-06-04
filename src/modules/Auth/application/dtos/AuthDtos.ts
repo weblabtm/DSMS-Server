@@ -9,6 +9,8 @@ export type AuthLoginRequestDto = {
     password: string;
     tenantId?: string;
     branchId?: string;
+    ipAddress?: string;
+    captchaToken?: string;
 };
 
 export type AuthRegisterRequestDto = {

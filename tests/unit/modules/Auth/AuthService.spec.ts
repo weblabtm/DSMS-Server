@@ -99,4 +99,113 @@ describe('AuthService', () => {
 
         expect(await sessionService.findByRefreshToken(session.refreshToken)).toBeUndefined();
     });
+
+    it('blocks login if CAPTCHA validation fails', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn(),
+            register: vi.fn(),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+        };
+        const captchaValidator = {
+            validate: vi.fn().mockResolvedValue(false),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            captchaValidator,
+        });
+
+        await expect(authService.login({
+            identifier: 'test@example.com',
+            password: 'secret',
+            captchaToken: 'bad-token',
+        })).rejects.toThrow('Invalid CAPTCHA token');
+    });
+
+    it('blocks login if IP is rate-limited/blocked', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn(),
+            register: vi.fn(),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+        };
+        const bruteForceService = {
+            isIpBlocked: vi.fn().mockResolvedValue(true),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            bruteForceService: bruteForceService as never,
+        });
+
+        await expect(authService.login({
+            identifier: 'test@example.com',
+            password: 'secret',
+            ipAddress: '1.2.3.4',
+        })).rejects.toThrow('Too many login attempts. Please try again later.');
+    });
+
+    it('locks account and sends email when failure threshold is reached', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue(null),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+            lockAccount: vi.fn().mockResolvedValue(undefined),
+        };
+        const bruteForceService = {
+            isIpBlocked: vi.fn().mockResolvedValue(false),
+            registerFailure: vi.fn().mockResolvedValue({ ipBlocked: false, accountLocked: true }),
+        };
+        const emailService = {
+            queueEmail: vi.fn().mockResolvedValue(undefined),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            bruteForceService: bruteForceService as never,
+            emailService: emailService as never,
+        });
+
+        await expect(authService.login({
+            identifier: 'target@example.com',
+            password: 'wrong-password',
+            ipAddress: '1.2.3.4',
+        })).rejects.toThrow('Invalid credentials');
+
+        expect(bruteForceService.registerFailure).toHaveBeenCalledWith('1.2.3.4', 'target@example.com');
+        expect(authDao.lockAccount).toHaveBeenCalledWith('target@example.com', expect.any(String), expect.any(Date));
+        expect(emailService.queueEmail).toHaveBeenCalledWith(
+            'target@example.com',
+            'Account Locked',
+            expect.stringContaining('/auth/unlock?token='),
+            undefined,
+            undefined
+        );
+    });
+
+    it('blocks login if account is locked in database', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn(),
+            isAccountLocked: vi.fn().mockResolvedValue(true),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+        });
+
+        await expect(authService.login({
+            identifier: 'locked@example.com',
+            password: 'password',
+        })).rejects.toThrow('Account is locked. Please check your email to unlock it.');
+    });
 });

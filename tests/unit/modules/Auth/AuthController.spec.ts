@@ -26,7 +26,7 @@ describe('AuthController', () => {
 
         await controller.login({ body: { identifier: 'admin@example.com', password: 'secret' } } as never, response as never);
 
-        expect(authService.login).toHaveBeenCalledWith({ identifier: 'admin@example.com', password: 'secret' });
+        expect(authService.login).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'admin@example.com', password: 'secret' }));
         expect(response.status).toHaveBeenCalledWith(200);
         expect(response.json).toHaveBeenCalledWith({
             sessionId: 'session-1',

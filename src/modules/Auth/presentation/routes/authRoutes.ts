@@ -11,6 +11,9 @@ export const createAuthRouter = (controller: AuthController, authenticationMiddl
     // POST /auth/login
     router.post('/login', controller.login.bind(controller));
 
+    // GET /auth/unlock
+    router.get('/unlock', controller.unlock.bind(controller));
+
     // POST /auth/refresh
     router.post('/refresh', controller.refresh.bind(controller));
 

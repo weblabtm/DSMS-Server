@@ -9,4 +9,10 @@ export interface AuthDao {
     authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null>;
 
     register(account: AuthRegisterRequestDto): Promise<AuthPrincipalDto>;
+
+    lockAccount(identifier: string, token: string, expiresAt: Date): Promise<void>;
+
+    unlockAccountByToken(token: string): Promise<boolean>;
+
+    isAccountLocked(identifier: string): Promise<boolean>;
 }

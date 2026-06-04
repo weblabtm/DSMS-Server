@@ -1,8 +1,9 @@
 import { SmsProvider, SmsSendResult } from './SmsProvider.js';
 
 export class ConsoleSmsProvider implements SmsProvider {
-    public async sendSms(to: string, body: string, callbackUrl?: string): Promise<SmsSendResult> {
-        console.log(`[ConsoleSmsProvider] Sending SMS to ${to}: "${body}". Callback URL: ${callbackUrl}`);
+    public async sendSms(to: string, body: string, callbackUrl?: string, fromOverride?: string): Promise<SmsSendResult> {
+        const from = fromOverride?.trim() || 'Console';
+        console.log(`[ConsoleSmsProvider] Sending SMS from "${from}" to ${to}: "${body}". Callback URL: ${callbackUrl}`);
         
         // Simulating Twilio status callback asynchronously if callbackUrl is provided
         if (callbackUrl) {

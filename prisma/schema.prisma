@@ -41,8 +41,12 @@ model AuthUser {
   tenantId   String?
   branchId   String?
   roles      String[] @default([])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isLocked             Boolean   @default(false)
+  lockedAt             DateTime?
+  unlockToken          String?   @unique
+  unlockTokenExpiresAt DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([tenantId, branchId])
 }

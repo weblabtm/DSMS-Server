@@ -5,18 +5,18 @@ Welcome to the **Notification Module** documentation. This module handles extern
 > [!IMPORTANT]
 > **Exclusive In-App Access**: There are **no public HTTP API endpoints** exposed by the Notification module for triggering notifications. To send notifications, developers **must** use the module exclusively via **in-app object method calls** (e.g. calling `send` on the polymorphic `NotificationSender` instance).
 
-Currently, the primary channel supported is **SMS** (using Twilio or a local Console mock for development). The system is fully extensible, enabling new channels (e.g., Email, Push, WhatsApp) to be added without breaking existing contracts.
+Currently supported channels: **SMS** (Twilio or Console mock) and **Email** (SendGrid or Console mock). The system is fully extensible — new channels (Push, WhatsApp, etc.) can be added without breaking existing contracts.
 
 ---
 
 ## Architectural Principles
 
-The module is designed around four main OOP components:
+The module is designed around four OOP components and follows the **Dependency Inversion Principle (DIP)** at every boundary:
 
-1. **`Notification` (Abstract Domain Model)**: Represents the base notification payload (e.g., recipient details, body content, and tenancy identifiers).
-2. **`NotificationSender` (Abstract Service Model)**: Defines the common contract for sending any type of notification.
-3. **`SmsNotification` & `SmsNotificationSender` (Concrete Implementations)**: Provide concrete logic for persisting and dispatching SMS notifications.
-4. **`SmsProvider` (Infrastructure Strategy)**: An interface that abstracts away the specific gateway provider (e.g., Twilio), permitting alternative providers to be swapped easily.
+1. **`Notification` (Abstract Domain Model)**: Base payload — recipient, body, tenant/branch context.
+2. **`NotificationSender` (Abstract Service)**: Common contract for sending any notification type.
+3. **`SmsNotification` & `SmsNotificationSender`**: Concrete SMS implementation.
+4. **`SmsProvider` (Infrastructure Strategy)**: Abstracts the gateway (Twilio / Console mock).
 
 ```mermaid
 classDiagram
@@ -30,6 +30,7 @@ classDiagram
     }
     class SmsNotification {
         +type: "sms"
+        +senderName: string?
     }
     Notification <|-- SmsNotification
 
@@ -42,13 +43,19 @@ classDiagram
         +send(notification: SmsNotification) Promise~void~
     }
     NotificationSender <|-- SmsNotificationSender
+
+    class ITenantNameResolver {
+        <<Interface — owned by Notification>>
+        +resolveNameById(id) Promise~string?~
+    }
+    SmsNotificationService ..> ITenantNameResolver : depends on
 ```
 
 ---
 
 ## How to Send an SMS Notification
 
-To send an SMS notification from other modules in the application, import and use the polymorphic `NotificationSender` abstraction:
+### Basic usage (no branding)
 
 ```typescript
 import { SmsNotification } from '../Notification/domain/SmsNotification.js';
@@ -56,27 +63,66 @@ import { SmsNotificationSender } from '../Notification/application/services/SmsN
 
 class AccountService {
     public constructor(
-        private readonly notificationSender: SmsNotificationSender
+        private readonly smsSender: SmsNotificationSender
     ) {}
 
-    public async inviteUser(phone: string, name: string): Promise<void> {
-        // 1. Create your concrete Notification subclass
+    public async notifyUser(phone: string, tenantId: string): Promise<void> {
         const notification = new SmsNotification(
-            phone,
-            `Hi ${name}, you have been invited to join our Driving School Management System!`,
-            'tenant-123',
-            'branch-456'
+            phone,                                    // recipient phone number (E.164 format)
+            'Your account has been created.',         // message body
+            tenantId,                                 // tenant context (for audit & sender lookup)
+            'branch-456'                              // optional branch context
         );
 
-        // 2. Dispatch polymorphically using the sender
-        await this.notificationSender.send(notification);
+        await this.smsSender.send(notification);
     }
 }
 ```
 
-## How to Send an Email Notification
+### With tenant branding — recommended pattern
 
-To send an Email notification from other modules, import and use the polymorphic `NotificationSender` abstraction parameterized with `EmailNotification`:
+When you already know the tenant's display name (e.g. from the current auth context or a service call), pass it directly. **This is the preferred approach** — it avoids any extra DB lookup inside the Notification module:
+
+```typescript
+import { SmsNotification } from '../Notification/domain/SmsNotification.js';
+
+// In your service, you already have the tenant name from context
+const tenantName = 'TechSchool'; // fetched from TenantService or auth context
+
+const notification = new SmsNotification(
+    '+94771234567',              // recipient
+    'Your OTP is 482910',        // body
+    'tenant-abc',                // tenantId
+    undefined,                   // branchId (optional)
+    tenantName                   // ← senderName: recipient sees "TechSchool" as the From field
+);
+
+await smsSender.send(notification);
+```
+
+> [!NOTE]
+> **Sender name rules (Twilio Alphanumeric Sender ID)**
+> - Max **11 characters**. Special characters and spaces are automatically stripped.
+> - **One-way only** — recipients cannot reply to an alphanumeric sender.
+> - **Not available in all countries** — the US does not support it.
+> - Check [Twilio country support](https://help.twilio.com/articles/223133767) before enabling.
+
+### Without a senderName — automatic fallback chain
+
+If you do **not** supply a `senderName`, the system resolves the sender automatically:
+
+```
+1. senderName on the message          ← you provided it (fastest, no DB hit)
+2. ITenantNameResolver (DIP adapter)  ← looks up tenant name via TenantService
+3. TWILIO_ALPHA_SENDER env var        ← system-level fallback name
+4. TWILIO_FROM_NUMBER                 ← phone number (final fallback)
+```
+
+So even without passing `senderName`, the recipient will still see the tenant's registered name — as long as the `tenantId` is valid.
+
+---
+
+## How to Send an Email Notification
 
 ```typescript
 import { EmailNotification } from '../Notification/domain/EmailNotification.js';
@@ -87,17 +133,15 @@ class InvitationService {
         private readonly emailSender: EmailNotificationSender
     ) {}
 
-    public async sendWelcomeEmail(emailAddress: string, name: string): Promise<void> {
-        // 1. Create your concrete EmailNotification subclass
+    public async sendWelcomeEmail(emailAddress: string, name: string, tenantId: string): Promise<void> {
         const email = new EmailNotification(
             emailAddress,
-            `<h1>Welcome to DSMS!</h1><p>Hi ${name}, your account is successfully verified.</p>`,
-            'Welcome to Driving School Management System!',
-            'tenant-123',
-            'branch-456'
+            `<h1>Welcome!</h1><p>Hi ${name}, your account is ready.</p>`,
+            'Welcome to DSMS',
+            tenantId,
+            undefined
         );
 
-        // 2. Dispatch polymorphically using the sender
         await this.emailSender.send(email);
     }
 }
@@ -105,18 +149,73 @@ class InvitationService {
 
 ---
 
+## Module Boundaries — what the Notification module does NOT do
+
+> [!IMPORTANT]
+> The Notification module **never imports** `TenantService`, `TenantDao`, or `prisma.tenant` directly.
+> It depends only on the `ITenantNameResolver` interface it owns.
+
+```
+✅ Correct — Notification depends on its own interface:
+   SmsNotificationService → ITenantNameResolver (interface, owned by Notification)
+
+❌ Wrong — never do this inside the Notification module:
+   import { TenantService } from '../../Tenant/...';
+   prisma.tenant.findUnique(...)
+```
+
+The wiring happens **only in `app.ts`** (the composition root), where a thin adapter wraps `TenantService` and fulfils the `ITenantNameResolver` contract.
+
+---
+
 ## Local Development and Webhook Simulation
 
-To prevent incurring Twilio API costs during local development, set the provider to console mock mode in your `.env` file:
+Set your `.env` to use the Console mock — no Twilio API calls, no charges:
 
 ```dotenv
 SMS_PROVIDER_TYPE=console
+EMAIL_PROVIDER_TYPE=console
 SMS_CALLBACK_BASE_URL=http://localhost:3000
 ```
 
-### The Console Mock Workflow
+### How the Console mock works
 
-1. When `SMS_PROVIDER_TYPE` is `console`, the application initializes the `ConsoleSmsProvider`.
-2. Outbound SMS messages are logged directly to the server terminal instead of dispatched over Twilio.
-3. The provider simulates Twilio's asynchronous status callback behaviour by firing an actual HTTP POST request to the local webhook endpoint `POST /notifications/sms/callback` after `1 second`.
-4. This ensures that the state transition loops (`PENDING` -> `SENT` -> `DELIVERED`) can be fully validated on your local machine without active API keys.
+1. `ConsoleSmsProvider` logs the outbound SMS to the terminal, showing `From`, `To`, and `Body`.
+2. It fires a simulated Twilio status callback (`POST /notifications/sms/callback`) after 1 second.
+3. This drives the full `PENDING → SENT → DELIVERED` state machine locally without real credentials.
+
+---
+
+## Testing Twilio Credentials (test script)
+
+Use the built-in test script to verify your Twilio setup and the alphanumeric sender feature:
+
+```bash
+# Basic test — sends from TWILIO_FROM_NUMBER or TWILIO_ALPHA_SENDER (from .env)
+npx tsx src/scripts/test-twilio.ts +94771234567
+
+# Test with a specific tenant name as the sender
+npx tsx src/scripts/test-twilio.ts +94771234567 "TechSchool"
+
+# Test with system default sender (reads from .env)
+npx tsx src/scripts/test-twilio.ts +94771234567
+```
+
+The script prints which sender is active and confirms whether the alpha ID was used.
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `SMS_PROVIDER_TYPE` | ✅ | `twilio` or `console` |
+| `TWILIO_ACCOUNT_SID` | When twilio | Twilio account SID |
+| `TWILIO_AUTH_TOKEN` | When twilio | Twilio auth token |
+| `TWILIO_FROM_NUMBER` | When twilio | Registered Twilio phone number (E.164) |
+| `TWILIO_ALPHA_SENDER` | Optional | System-level alphanumeric sender name (max 11 chars) |
+| `SMS_CALLBACK_BASE_URL` | ✅ | Base URL for Twilio status callbacks |
+| `EMAIL_PROVIDER_TYPE` | ✅ | `sendgrid` or `console` |
+| `SENDGRID_API_KEY` | When sendgrid | SendGrid API key |
+| `SENDGRID_FROM_EMAIL` | When sendgrid | Verified sender email |
+| `SENDGRID_FROM_NAME` | Optional | Display name for outbound emails |
