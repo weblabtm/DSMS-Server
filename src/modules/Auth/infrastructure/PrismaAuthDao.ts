@@ -89,4 +89,49 @@ export class PrismaAuthDao implements AuthDao {
 
         return principal;
     }
+
+    public async lockAccount(identifier: string, token: string, expiresAt: Date): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: true,
+                lockedAt: new Date(),
+                unlockToken: token,
+                unlockTokenExpiresAt: expiresAt,
+            },
+        });
+    }
+
+    public async unlockAccountByToken(token: string): Promise<boolean> {
+        const user = await (this.prisma as any).authUser.findFirst({
+            where: { unlockToken: token },
+        });
+
+        if (!user) {
+            return false;
+        }
+
+        if (user.unlockTokenExpiresAt && user.unlockTokenExpiresAt.getTime() < Date.now()) {
+            return false;
+        }
+
+        await (this.prisma as any).authUser.update({
+            where: { id: user.id },
+            data: {
+                isLocked: false,
+                lockedAt: null,
+                unlockToken: null,
+                unlockTokenExpiresAt: null,
+            },
+        });
+
+        return true;
+    }
+
+    public async isAccountLocked(identifier: string): Promise<boolean> {
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier },
+        });
+        return !!user?.isLocked;
+    }
 }

@@ -16,6 +16,8 @@ export class AuthController {
     public async login(request: Request, response: Response): Promise<void> {
         try {
             const dto = AuthRequestMapper.toLoginRequestDto(request.body);
+            dto.ipAddress = request.ip || request.socket?.remoteAddress;
+            dto.captchaToken = (request.body as any)?.captchaToken;
             
             const hostTenantSlug = resolveTenantSlug(request.headers);
             if (hostTenantSlug) {
@@ -27,9 +29,37 @@ export class AuthController {
             response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            const status = message.includes('Invalid credentials') ? 401 : 400;
+            let status = 400;
+            if (message.includes('Invalid credentials')) {
+                status = 401;
+            } else if (message.includes('Too many login attempts')) {
+                status = 429;
+            } else if (message.includes('locked')) {
+                status = 403;
+            }
 
             response.status(status).json({ message });
+        }
+    }
+
+    // GET /auth/unlock
+    public async unlock(request: Request, response: Response): Promise<void> {
+        const token = String(request.query.token || '');
+        if (!token) {
+            response.status(400).json({ message: 'Unlock token is required.' });
+            return;
+        }
+
+        try {
+            const success = await this.authService.unlockAccount(token);
+            if (success) {
+                response.status(200).json({ message: 'Account successfully unlocked. You can now log in.' });
+            } else {
+                response.status(400).json({ message: 'Invalid or expired unlock token.' });
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            response.status(400).json({ message });
         }
     }
 

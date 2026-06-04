@@ -8,6 +8,9 @@ import { type AuthLoginRequestDto, type AuthPrincipalDto, type AuthRegisterReque
 type AuthSeed = AuthPrincipalDto & {
     identifier: string;
     password: string;
+    isLocked?: boolean;
+    unlockToken?: string;
+    unlockTokenExpiresAt?: Date;
 };
 
 export class InMemoryAuthDao implements AuthDao {
@@ -34,7 +37,7 @@ export class InMemoryAuthDao implements AuthDao {
             return null;
         }
 
-        const { identifier: _identifier, password: _password, ...principal } = user;
+        const { identifier: _identifier, password: _password, isLocked: _isLocked, unlockToken: _unlockToken, unlockTokenExpiresAt: _unlockTokenExpiresAt, ...principal } = user;
 
         return principal;
     }
@@ -51,12 +54,43 @@ export class InMemoryAuthDao implements AuthDao {
             roles: [account.role ?? 'Student'],
             ...(account.tenantId ? { tenantId: account.tenantId } : {}),
             ...(account.branchId ? { branchId: account.branchId } : {}),
+            isLocked: false,
         };
 
         this.usersByIdentifier.set(account.identifier, principal);
 
-        const { identifier: _identifier, password: _password, ...authPrincipal } = principal;
+        const { identifier: _identifier, password: _password, isLocked: _isLocked, unlockToken: _unlockToken, unlockTokenExpiresAt: _unlockTokenExpiresAt, ...authPrincipal } = principal;
 
         return authPrincipal;
+    }
+
+    public async lockAccount(identifier: string, token: string, expiresAt: Date): Promise<void> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (user) {
+            user.isLocked = true;
+            user.unlockToken = token;
+            user.unlockTokenExpiresAt = expiresAt;
+        }
+    }
+
+    public async unlockAccountByToken(token: string): Promise<boolean> {
+        for (const user of this.usersByIdentifier.values()) {
+            if (user.unlockToken === token) {
+                // Check expiry
+                if (user.unlockTokenExpiresAt && user.unlockTokenExpiresAt.getTime() < Date.now()) {
+                    return false;
+                }
+                user.isLocked = false;
+                user.unlockToken = undefined;
+                user.unlockTokenExpiresAt = undefined;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public async isAccountLocked(identifier: string): Promise<boolean> {
+        const user = this.usersByIdentifier.get(identifier);
+        return !!user?.isLocked;
     }
 }

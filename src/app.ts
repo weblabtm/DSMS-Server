@@ -20,6 +20,9 @@ import { TenantController } from './modules/Tenant/presentation/controllers/Tena
 import type { PrismaClient } from './generated/prisma/client.js';
 import { registerSwaggerDocs } from './docs/swagger.js';
 import { RedisConnection } from './infrastructure/redis/redis-connection.js';
+import { BruteForceProtectionService } from './modules/Auth/application/services/BruteForceProtectionService.js';
+import { RedisBruteForceStore } from './modules/Auth/infrastructure/RedisBruteForceStore.js';
+import { TurnstileCaptchaValidator } from './modules/Auth/infrastructure/captcha/TurnstileCaptchaValidator.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
@@ -57,6 +60,7 @@ export class ServerApplication {
     private readonly smsNotificationController: SmsNotificationController;
     private readonly authenticationMiddleware: AuthenticationMiddleware;
     private readonly authorizationMiddleware: AuthorizationMiddleware;
+    private readonly bruteForceService: BruteForceProtectionService;
 
     public constructor(
         private readonly environment: EnvironmentConfig,
@@ -67,11 +71,37 @@ export class ServerApplication {
         this.app.set('trust proxy', true);
         this.allowedOrigins = new Set(environment.allowedOrigins);
 
+        // Email Gateway Module (initialized early for dependency injection in AuthService)
+        const emailProvider = environment.emailProviderType === 'sendgrid'
+            ? new SendGridEmailProvider({
+                apiKey: environment.sendgridApiKey,
+                fromEmail: environment.sendgridFromEmail,
+                fromName: environment.sendgridFromName,
+              })
+            : new ConsoleEmailProvider();
+
+        const emailService = new EmailNotificationService(
+            prismaClient as any,
+            emailProvider
+        );
+
+        const bruteForceStore = new RedisBruteForceStore(redisConnection);
+        this.bruteForceService = new BruteForceProtectionService(bruteForceStore);
+        const captchaValidator = new TurnstileCaptchaValidator(environment.turnstileSecretKey, environment.disableCaptcha);
+
         const authDao = prismaClient ? new PrismaAuthDao(prismaClient) : new InMemoryAuthDao();
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret', redisConnection) : new SessionService();
         const permissionGuard = new PermissionGuard();
-        const authService = new AuthService({ tokenService, sessionService, authDao, permissionGuard });
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao,
+            permissionGuard,
+            bruteForceService: this.bruteForceService,
+            captchaValidator,
+            emailService,
+        });
         this.authController = new AuthController(authService);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
         this.authorizationMiddleware = new AuthorizationMiddleware(permissionGuard);
@@ -109,20 +139,6 @@ export class ServerApplication {
             this.app.locals.smsRetryWorker = smsRetryWorker;
         }
 
-        // Email Gateway Module
-        const emailProvider = environment.emailProviderType === 'sendgrid'
-            ? new SendGridEmailProvider({
-                apiKey: environment.sendgridApiKey,
-                fromEmail: environment.sendgridFromEmail,
-                fromName: environment.sendgridFromName,
-              })
-            : new ConsoleEmailProvider();
-
-        const emailService = new EmailNotificationService(
-            prismaClient as any,
-            emailProvider
-        );
-
         if (prismaClient) {
             const emailRetryWorker = new EmailRetryWorker(emailService);
             emailRetryWorker.start();
@@ -141,9 +157,61 @@ export class ServerApplication {
     }
 
     private registerMiddleware(): void {
+        this.app.use(this.createGlobalRateLimiterMiddleware(this.bruteForceService));
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
         this.app.use(this.createCorsMiddleware());
+    }
+
+    private createGlobalRateLimiterMiddleware(bruteForceService: BruteForceProtectionService) {
+        return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+            const ip = request.ip || request.socket.remoteAddress || 'unknown';
+
+            try {
+                // 1. Check if IP is blocked
+                const isBlocked = await bruteForceService.isIpBlocked(ip);
+                if (isBlocked) {
+                    response.status(403).json({ message: 'Access denied. IP is temporarily blocked.' });
+                    return;
+                }
+
+                // 2. Enforce global request rate limits (e.g. 100 requests per minute)
+                const key = `rate:ip:global:${ip}`;
+                const now = Date.now();
+                const limit = 100;
+                await (bruteForceService as any).store.logAttempt(key, now, 60);
+                const count = await (bruteForceService as any).store.getAttemptCount(key, now - 60000);
+
+                if (count > limit) {
+                    response.status(429).json({ message: 'Too many requests. Please try again later.' });
+                    return;
+                }
+
+                next();
+            } catch (error) {
+                // Fail-safe: continue on error
+                next();
+            }
+        };
+    }
+
+    private createNotFoundHandler(bruteForceService: BruteForceProtectionService) {
+        return async (request: Request, response: Response): Promise<void> => {
+            const ip = request.ip || request.socket.remoteAddress || 'unknown';
+            try {
+                const blocked = await bruteForceService.register404(ip);
+                if (blocked) {
+                    response.status(403).json({ message: 'Access denied. IP is blocked due to path scanning.' });
+                    return;
+                }
+            } catch (error) {
+                console.error('[notFoundHandler] 404 logging error:', error);
+            }
+
+            response.status(404).json({
+                message: 'Route not found',
+            });
+        };
     }
 
     private registerRoutes(): void {
@@ -185,7 +253,7 @@ export class ServerApplication {
     }
 
     private registerNotFoundHandler(): void {
-        this.app.use(this.notFoundHandler);
+        this.app.use(this.createNotFoundHandler(this.bruteForceService));
     }
 
     private registerErrorHandler(): void {
@@ -277,12 +345,6 @@ export class ServerApplication {
         response.status(200).json({
             apiBaseUrl: `${request.protocol}://${request.get('host') ?? 'localhost'}`,
             hostname: request.hostname,
-        });
-    }
-
-    private notFoundHandler(_request: Request, response: Response): void {
-        response.status(404).json({
-            message: 'Route not found',
         });
     }
 

@@ -9,6 +9,9 @@ import { type AuthLoginRequestDto, type AuthLogoutRequestDto, type AuthRefreshRe
 import { PermissionGuard } from '../PermissionGuard.js';
 import type { SessionRecord, CreateSessionInput, CreateSessionWithAccessJtiInput } from './SessionService.js';
 import { TokenService, type AccessTokenClaims } from './TokenService.js';
+import type { BruteForceProtectionService } from './BruteForceProtectionService.js';
+import type { ICaptchaValidator } from './ICaptchaValidator.js';
+import crypto from 'crypto';
 
 export type AuthSessionBundle = {
     sessionId: string;
@@ -30,6 +33,11 @@ export type AuthServiceDependencies = {
     };
     authDao: AuthDao;
     permissionGuard?: PermissionGuard;
+    bruteForceService?: BruteForceProtectionService;
+    captchaValidator?: ICaptchaValidator;
+    emailService?: {
+        queueEmail(to: string, subject: string, body: string, tenantId?: string, branchId?: string): Promise<any>;
+    };
 };
 
 export class AuthService {
@@ -40,10 +48,67 @@ export class AuthService {
     }
 
     public async login(credentials: AuthLoginRequestDto): Promise<AuthSessionResponseDto> {
+        const { bruteForceService, captchaValidator, emailService } = this.dependencies;
+
+        // 1. CAPTCHA validation
+        if (captchaValidator) {
+            const isValidCaptcha = await captchaValidator.validate(credentials.captchaToken || '', credentials.ipAddress);
+            if (!isValidCaptcha) {
+                throw new Error('Invalid CAPTCHA token');
+            }
+        }
+
+        // 2. IP Rate limit check
+        if (bruteForceService && credentials.ipAddress) {
+            const isBlocked = await bruteForceService.isIpBlocked(credentials.ipAddress);
+            if (isBlocked) {
+                throw new Error('Too many login attempts. Please try again later.');
+            }
+        }
+
+        // 3. Database Account lockout check
+        const isLocked = await this.dependencies.authDao.isAccountLocked(credentials.identifier);
+        if (isLocked) {
+            throw new Error('Account is locked. Please check your email to unlock it.');
+        }
+
+        // 4. Authenticate credentials
         const principal = await this.dependencies.authDao.authenticate(credentials);
 
         if (!principal) {
+            // Register failed attempt
+            if (bruteForceService) {
+                const ip = credentials.ipAddress || 'unknown';
+                const { accountLocked } = await bruteForceService.registerFailure(ip, credentials.identifier);
+
+                if (accountLocked) {
+                    // Lock account persistently in database
+                    const token = crypto.randomBytes(32).toString('hex');
+                    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours expiration
+                    await this.dependencies.authDao.lockAccount(credentials.identifier, token, expiresAt);
+
+                    // Send unlock email
+                    if (emailService) {
+                        const baseUrl = process.env.SMS_CALLBACK_BASE_URL || 'http://localhost:3000';
+                        const unlockLink = `${baseUrl}/auth/unlock?token=${token}`;
+                        await emailService.queueEmail(
+                            credentials.identifier,
+                            'Account Locked',
+                            `Your account has been locked due to too many failed login attempts. Click here to unlock it: ${unlockLink}`,
+                            credentials.tenantId,
+                            credentials.branchId
+                        );
+                    }
+                }
+            }
+
             throw new Error('Invalid credentials');
+        }
+
+        // 5. Success resets brute-force failure counters
+        if (bruteForceService) {
+            const ip = credentials.ipAddress || 'unknown';
+            await bruteForceService.registerSuccess(ip, credentials.identifier);
         }
 
         return this.toSessionResponse(await this.issueSession({
@@ -53,6 +118,10 @@ export class AuthService {
             branchId: principal.branchId,
             tokenVersion: principal.tokenVersion,
         }));
+    }
+
+    public async unlockAccount(token: string): Promise<boolean> {
+        return await this.dependencies.authDao.unlockAccountByToken(token);
     }
 
     public async issueSession(principal: {

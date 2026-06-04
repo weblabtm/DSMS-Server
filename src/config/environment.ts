@@ -72,6 +72,10 @@ export class EnvironmentConfig {
 
     public readonly sendgridFromName: string;
 
+    public readonly turnstileSecretKey: string;
+
+    public readonly disableCaptcha: boolean;
+
     public constructor(env: NodeJS.ProcessEnv = process.env) {
         this.port = parsePort(env.PORT, 3000);
         this.allowedOrigins = parseList(env.ALLOWED_ORIGINS);
@@ -101,6 +105,10 @@ export class EnvironmentConfig {
         this.sendgridApiKey = env.SENDGRID_API_KEY ?? '';
         this.sendgridFromEmail = env.SENDGRID_FROM_EMAIL ?? '';
         this.sendgridFromName = env.SENDGRID_FROM_NAME ?? 'DSMS';
+
+        // CAPTCHA Setup
+        this.turnstileSecretKey = env.TURNSTILE_SECRET_KEY ?? '';
+        this.disableCaptcha = parseBoolean(env.DISABLE_CAPTCHA, true);
     }
 
     public static fromProcessEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {
