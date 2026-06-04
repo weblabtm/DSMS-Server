@@ -52,7 +52,7 @@ export class EnvironmentConfig {
 
     public readonly enableSwaggerDocs: boolean;
 
-    public readonly smsProviderType: 'twilio' | 'console';
+    public readonly smsProviderType: 'twilio' | 'textlk' | 'console';
 
     public readonly smsCallbackBaseUrl: string;
 
@@ -65,6 +65,10 @@ export class EnvironmentConfig {
     public readonly twilioAlphaSender: string;
 
     public readonly twilioValidateSignature: boolean;
+
+    public readonly textLkApiToken: string;
+
+    public readonly textLkSenderId: string;
 
     public readonly emailProviderType: 'sendgrid' | 'console';
 
@@ -94,14 +98,24 @@ export class EnvironmentConfig {
         this.minioBucketPolicy = env.MINIO_BUCKET_POLICY === 'public-read' ? 'public-read' : 'private';
         this.enableSwaggerDocs = String(env.ENABLE_SWAGGER_DOCS ?? '').toLowerCase() === 'true';
 
-        // Outbound SMS & Twilio Setup
-        this.smsProviderType = (env.SMS_PROVIDER_TYPE === 'twilio' ? 'twilio' : 'console') as 'twilio' | 'console';
+        // Outbound SMS & Twilio / TextLk Setup
+        const rawProvider = env.SMS_PROVIDER_TYPE?.toLowerCase();
+        if (rawProvider === 'twilio') {
+            this.smsProviderType = 'twilio';
+        } else if (rawProvider === 'textlk') {
+            this.smsProviderType = 'textlk';
+        } else {
+            this.smsProviderType = 'console';
+        }
         this.smsCallbackBaseUrl = env.SMS_CALLBACK_BASE_URL ?? 'http://localhost:3000';
         this.twilioAccountSid = env.TWILIO_ACCOUNT_SID ?? '';
         this.twilioAuthToken = env.TWILIO_AUTH_TOKEN ?? '';
         this.twilioFromNumber = env.TWILIO_FROM_NUMBER ?? '';
         this.twilioAlphaSender = env.TWILIO_ALPHA_SENDER ?? '';
         this.twilioValidateSignature = parseBoolean(env.TWILIO_VALIDATE_SIGNATURE, false);
+
+        this.textLkApiToken = env.TEXT_LK_API_TOKEN ?? '';
+        this.textLkSenderId = env.TEXT_LK_SENDER_ID ?? '';
 
         // Outbound Email & SendGrid Setup
         this.emailProviderType = (env.EMAIL_PROVIDER_TYPE === 'sendgrid' ? 'sendgrid' : 'console') as 'sendgrid' | 'console';

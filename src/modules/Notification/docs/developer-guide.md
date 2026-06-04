@@ -5,7 +5,7 @@ Welcome to the **Notification Module** documentation. This module handles extern
 > [!IMPORTANT]
 > **Exclusive In-App Access**: There are **no public HTTP API endpoints** exposed by the Notification module for triggering notifications. To send notifications, developers **must** use the module exclusively via **in-app object method calls** (e.g. calling `send` on the polymorphic `NotificationSender` instance).
 
-Currently supported channels: **SMS** (Twilio or Console mock) and **Email** (SendGrid or Console mock). The system is fully extensible — new channels (Push, WhatsApp, etc.) can be added without breaking existing contracts.
+Currently supported channels: **SMS** (Twilio, Text.lk, or Console mock) and **Email** (SendGrid or Console mock). The system is fully extensible — new channels (Push, WhatsApp, etc.) can be added without breaking existing contracts.
 
 ---
 
@@ -196,12 +196,23 @@ npx tsx src/scripts/test-twilio.ts +94771234567
 
 # Test with a specific tenant name as the sender
 npx tsx src/scripts/test-twilio.ts +94771234567 "TechSchool"
-
-# Test with system default sender (reads from .env)
-npx tsx src/scripts/test-twilio.ts +94771234567
 ```
 
 The script prints which sender is active and confirms whether the alpha ID was used.
+
+---
+
+## Testing Text.lk Credentials (test script)
+
+Use the built-in test script to verify your Text.lk Sri Lanka SMS Gateway setup:
+
+```bash
+# Basic test — sends from TEXT_LK_SENDER_ID (from .env)
+npx tsx src/scripts/test-textlk.ts 94771234567
+
+# Test with a specific tenant name as the sender
+npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"
+```
 
 ---
 
@@ -209,13 +220,16 @@ The script prints which sender is active and confirms whether the alpha ID was u
 
 | Variable | Required | Description |
 |---|---|---|
-| `SMS_PROVIDER_TYPE` | ✅ | `twilio` or `console` |
+| `SMS_PROVIDER_TYPE` | ✅ | `twilio`, `textlk`, or `console` |
 | `TWILIO_ACCOUNT_SID` | When twilio | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | When twilio | Twilio auth token |
 | `TWILIO_FROM_NUMBER` | When twilio | Registered Twilio phone number (E.164) |
 | `TWILIO_ALPHA_SENDER` | Optional | System-level alphanumeric sender name (max 11 chars) |
 | `SMS_CALLBACK_BASE_URL` | ✅ | Base URL for Twilio status callbacks |
+| `TEXT_LK_API_TOKEN` | When textlk | Text.lk Bearer API Token |
+| `TEXT_LK_SENDER_ID` | When textlk | Default Text.lk Sender ID (max 11 chars) |
 | `EMAIL_PROVIDER_TYPE` | ✅ | `sendgrid` or `console` |
 | `SENDGRID_API_KEY` | When sendgrid | SendGrid API key |
 | `SENDGRID_FROM_EMAIL` | When sendgrid | Verified sender email |
 | `SENDGRID_FROM_NAME` | Optional | Display name for outbound emails |
+
