@@ -376,4 +376,92 @@ describe('TwilioSmsProvider — Alphanumeric Sender ID', () => {
         expect(capturedBody!.get('From')).toBe('+17016582160');
         fetchSpy.mockRestore();
     });
+
+    it('automatically falls back to fromNumber when Twilio returns trial account or unsupported alphanumeric sender error', async () => {
+        const fetchCalls: { url: string; body: URLSearchParams }[] = [];
+
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+            fetchCalls.push({
+                url: url as string,
+                body: new URLSearchParams(init?.body as string),
+            });
+
+            if (fetchCalls.length === 1) {
+                // First call: Simulate Alphanumeric sender error on trial account (error 21614)
+                return new Response(
+                    JSON.stringify({
+                        code: 21614,
+                        message: "Alphanumeric Sender ID cannot be used as the 'From' number on trial accounts: SadeeshaLer",
+                    }),
+                    { status: 400 }
+                );
+            } else {
+                // Second call: Fallback success
+                return new Response(JSON.stringify({ sid: 'SM_fallback_success' }), { status: 201 });
+            }
+        });
+
+        // Suppress warning log in test output
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const provider = new TwilioSmsProvider({ ...BASE_CONFIG, alphaId: 'SadeeshaLer' });
+        const result = await provider.sendSms('+94727722924', 'Hello test!');
+
+        expect(result.success).toBe(true);
+        expect(result.providerMessageId).toBe('SM_fallback_success');
+        expect(fetchCalls).toHaveLength(2);
+        
+        // Verifying first call attempted alphanumeric ID
+        expect(fetchCalls[0].body.get('From')).toBe('SadeeshaLer');
+        
+        // Verifying second call fell back to default phone number
+        expect(fetchCalls[1].body.get('From')).toBe('+17016582160');
+
+        fetchSpy.mockRestore();
+        warnSpy.mockRestore();
+    });
+
+    it('returns combined error message if both alphanumeric sender and fallback phone number fail', async () => {
+        const fetchCalls: { url: string; body: URLSearchParams }[] = [];
+
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+            fetchCalls.push({
+                url: url as string,
+                body: new URLSearchParams(init?.body as string),
+            });
+
+            if (fetchCalls.length === 1) {
+                return new Response(
+                    JSON.stringify({
+                        code: 21614,
+                        message: "Alphanumeric Sender ID cannot be used as the 'From' number on trial accounts: SadeeshaLer",
+                    }),
+                    { status: 400 }
+                );
+            } else {
+                // Second call: Fallback also fails (e.g. invalid to number)
+                return new Response(
+                    JSON.stringify({
+                        code: 21211,
+                        message: "The 'To' number is not a valid phone number.",
+                    }),
+                    { status: 400 }
+                );
+            }
+        });
+
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const provider = new TwilioSmsProvider({ ...BASE_CONFIG, alphaId: 'SadeeshaLer' });
+        const result = await provider.sendSms('invalid-number', 'Hello test!');
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Alphanumeric Sender ID failed');
+        expect(result.error).toContain('fallback phone number also failed');
+        expect(fetchCalls).toHaveLength(2);
+
+        fetchSpy.mockRestore();
+        warnSpy.mockRestore();
+    });
 });
+
