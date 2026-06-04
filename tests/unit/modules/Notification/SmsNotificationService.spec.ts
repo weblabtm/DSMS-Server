@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SmsNotificationService, buildAlphaSenderId } from '../../../../src/modules/Notification/application/services/SmsNotificationService.js';
 import { SmsProvider } from '../../../../src/modules/Notification/infrastructure/sms/SmsProvider.js';
 import { TwilioSmsProvider } from '../../../../src/modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
+import { TextLkSmsProvider } from '../../../../src/modules/Notification/infrastructure/sms/TextLkSmsProvider.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -464,4 +465,101 @@ describe('TwilioSmsProvider — Alphanumeric Sender ID', () => {
         warnSpy.mockRestore();
     });
 });
+
+// ---------------------------------------------------------------------------
+// TextLkSmsProvider — Sri Lanka SMS gateway (provider-level tests)
+// ---------------------------------------------------------------------------
+
+describe('TextLkSmsProvider', () => {
+    const BASE_CONFIG = {
+        apiToken: 'test-token',
+        defaultSenderId: 'TextLKDemo',
+    };
+
+    it('sends SMS successfully, sanitizing the recipient number by removing leading "+"', async () => {
+        let capturedUrl: string | null = null;
+        let capturedHeaders: HeadersInit | null = null;
+        let capturedBody: any = null;
+
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+            capturedUrl = url as string;
+            capturedHeaders = init?.headers || null;
+            capturedBody = JSON.parse(init?.body as string);
+            return new Response(
+                JSON.stringify({
+                    status: 'success',
+                    data: {
+                        uid: '606812e63f78b',
+                        recipient: '94771234567',
+                        message: 'Hello Text.lk!',
+                    },
+                }),
+                { status: 200 }
+            );
+        });
+
+        const provider = new TextLkSmsProvider(BASE_CONFIG);
+        const result = await provider.sendSms('+94771234567', 'Hello Text.lk!');
+
+        expect(result.success).toBe(true);
+        expect(result.providerMessageId).toBe('606812e63f78b');
+        expect(capturedUrl).toBe('https://app.text.lk/api/v3/sms/send');
+        expect(capturedHeaders).toMatchObject({
+            'Authorization': 'Bearer test-token',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        });
+        expect(capturedBody).toEqual({
+            recipient: '94771234567', // "+" stripped
+            sender_id: 'TextLKDemo',
+            type: 'plain',
+            message: 'Hello Text.lk!',
+        });
+
+        fetchSpy.mockRestore();
+    });
+
+    it('uses fromOverride instead of defaultSenderId when supplied', async () => {
+        let capturedBody: any = null;
+
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+            capturedBody = JSON.parse(init?.body as string);
+            return new Response(JSON.stringify({ status: 'success', data: 'ok' }), { status: 200 });
+        });
+
+        const provider = new TextLkSmsProvider(BASE_CONFIG);
+        await provider.sendSms('94771234567', 'Hello!', undefined, 'MySender');
+
+        expect(capturedBody.sender_id).toBe('MySender');
+        fetchSpy.mockRestore();
+    });
+
+    it('returns success: false with provider error message on failure response', async () => {
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+            return new Response(
+                JSON.stringify({
+                    status: 'error',
+                    message: 'Insufficient balance.',
+                }),
+                { status: 400 }
+            );
+        });
+
+        const provider = new TextLkSmsProvider(BASE_CONFIG);
+        const result = await provider.sendSms('94771234567', 'Hello!');
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Insufficient balance.');
+        fetchSpy.mockRestore();
+    });
+
+    it('returns success: false when required config is missing', async () => {
+        const provider = new TextLkSmsProvider({ apiToken: '', defaultSenderId: '' });
+        const result = await provider.sendSms('94771234567', 'Hello!');
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('provider is not properly configured');
+    });
+});
+
 

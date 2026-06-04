@@ -27,6 +27,7 @@ import { TurnstileCaptchaValidator } from './modules/Auth/infrastructure/captcha
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
 import { TwilioSmsProvider } from './modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
+import { TextLkSmsProvider } from './modules/Notification/infrastructure/sms/TextLkSmsProvider.js';
 import { SmsNotificationService } from './modules/Notification/application/services/SmsNotificationService.js';
 import type { ITenantNameResolver } from './modules/Notification/application/services/ITenantNameResolver.js';
 import { SmsNotificationController } from './modules/Notification/presentation/controllers/SmsNotificationController.js';
@@ -113,14 +114,22 @@ export class ServerApplication {
         this.tenantController = new TenantController(tenantService);
 
         // SMS Gateway Module
-        const smsProvider = environment.smsProviderType === 'twilio'
-            ? new TwilioSmsProvider({
+        let smsProvider;
+        if (environment.smsProviderType === 'twilio') {
+            smsProvider = new TwilioSmsProvider({
                 accountSid: environment.twilioAccountSid,
                 authToken: environment.twilioAuthToken,
                 fromNumber: environment.twilioFromNumber,
                 alphaId: environment.twilioAlphaSender || undefined,
-              })
-            : new ConsoleSmsProvider();
+            });
+        } else if (environment.smsProviderType === 'textlk') {
+            smsProvider = new TextLkSmsProvider({
+                apiToken: environment.textLkApiToken,
+                defaultSenderId: environment.textLkSenderId,
+            });
+        } else {
+            smsProvider = new ConsoleSmsProvider();
+        }
 
         // Thin adapter: implements ITenantNameResolver (owned by Notification module)
         // wrapping TenantService (owned by Tenant module).
