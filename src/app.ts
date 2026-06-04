@@ -28,6 +28,7 @@ import { TurnstileCaptchaValidator } from './modules/Auth/infrastructure/captcha
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
 import { TwilioSmsProvider } from './modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
 import { SmsNotificationService } from './modules/Notification/application/services/SmsNotificationService.js';
+import type { ITenantNameResolver } from './modules/Notification/application/services/ITenantNameResolver.js';
 import { SmsNotificationController } from './modules/Notification/presentation/controllers/SmsNotificationController.js';
 // import { createNotificationRouter } from './modules/Notification/presentation/routes/notificationRoutes.js';
 import { SmsRetryWorker } from './modules/Notification/application/workers/SmsRetryWorker.js';
@@ -117,13 +118,33 @@ export class ServerApplication {
                 accountSid: environment.twilioAccountSid,
                 authToken: environment.twilioAuthToken,
                 fromNumber: environment.twilioFromNumber,
+                alphaId: environment.twilioAlphaSender || undefined,
               })
             : new ConsoleSmsProvider();
+
+        // Thin adapter: implements ITenantNameResolver (owned by Notification module)
+        // wrapping TenantService (owned by Tenant module).
+        // The Notification module never imports TenantService — only this interface.
+        const tenantNameResolver: ITenantNameResolver = {
+            async resolveNameById(tenantId: string): Promise<string | undefined> {
+                try {
+                    // Try by ID first, then by slug
+                    const byId   = await tenantService.getTenant(tenantId);
+                    if (byId?.name) return byId.name;
+                    const bySlug = await tenantService.getTenantBySlug(tenantId);
+                    return bySlug?.name ?? undefined;
+                } catch {
+                    return undefined;
+                }
+            },
+        };
 
         const smsService = new SmsNotificationService(
             prismaClient as any,
             smsProvider,
-            environment.smsCallbackBaseUrl
+            environment.smsCallbackBaseUrl,
+            environment.twilioAlphaSender || undefined,  // system-level fallback
+            tenantNameResolver                           // Pattern 1: DIP adapter
         );
 
         this.smsNotificationController = new SmsNotificationController(

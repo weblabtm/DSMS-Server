@@ -1,32 +1,48 @@
 # Notification Module
 
 ## Purpose
-Handles in-app and external notifications, templates, and delivery rules.
+Handles external notifications (SMS, Email) through a fully decoupled, provider-agnostic pipeline. All delivery is asynchronous and durable — messages are persisted before dispatch and retried with exponential backoff on failure.
 
 ## Key Classes
-| Class                    | Responsibility                                      |
-| ------------------------ | --------------------------------------------------- |
-| `NotificationController` | Exposes notification endpoints.                     |
-| `NotificationService`    | Sends notifications and manages delivery workflows. |
-| `NotificationRepository` | Persists notification records.                      |
-| `TemplateService`        | Manages reusable notification templates.            |
+
+| Class | Layer | Responsibility |
+|---|---|---|
+| `SmsNotification` | Domain | SMS payload: recipient, body, tenantId, branchId, **senderName** |
+| `EmailNotification` | Domain | Email payload: recipient, body, subject, tenantId, branchId |
+| `SmsNotificationSender` | Application | Polymorphic sender for SMS — delegates to `SmsNotificationService` |
+| `EmailNotificationSender` | Application | Polymorphic sender for Email — delegates to `EmailNotificationService` |
+| `SmsNotificationService` | Application | Queues SMS, resolves sender name, manages retries |
+| `EmailNotificationService` | Application | Queues email, manages retries |
+| `ITenantNameResolver` | Application (port) | Interface owned by this module for tenant name lookup — fulfilled externally |
+| `TwilioSmsProvider` | Infrastructure | Sends SMS via Twilio REST API. Supports alphanumeric sender IDs |
+| `ConsoleSmsProvider` | Infrastructure | Dev-mode mock — logs SMS to console, simulates Twilio callbacks |
 
 ## Ownership Rules
-- Keep notification content and delivery logic here.
-- Avoid embedding business workflows from other modules into notifications.
-- Notifications should be triggered by events, not direct rule duplication.
-- **In-App Integration Only**: All external module integration must occur exclusively through in-app object method calls (using `SmsNotificationSender.send(notification)`). Do not attempt to invoke HTTP endpoints to queue notifications, as these are unexposed.
 
-**Module: Notification**
+- **No HTTP endpoints are exposed** by this module for triggering notifications. All integration is via in-app method calls only (`SmsNotificationSender.send(notification)`).
+- **No direct imports of other modules.** The Notification module depends on the `ITenantNameResolver` interface it owns — not on `TenantService` or `prisma.tenant` directly.
+- Notifications should be triggered by domain events or service calls from other modules, not by duplicating business logic here.
+- Always use async delivery with the queuing service. Never call the provider directly from business code.
 
-- **Scope:** Template management, delivery pipelines (email, SMS), and notification history.
+## How to Send a Notification (Quick Reference)
 
-- **Folder structure:**
-	- `application/` — delivery services, queuing logic
-	- `domain/` — template value objects and notification types
-	- `infrastructure/` — adapters for SMTP/SMS providers
-	- `presentation/` — management APIs and status endpoints
-	- `prisma/` — module Prisma models for notification records
+```typescript
+// SMS — with tenant branding
+const sms = new SmsNotification(phone, body, tenantId, branchId, tenantName);
+await smsSender.send(sms);
 
-- **Guidance:** Use async delivery and durable queues for external providers; store delivery receipts.
+// Email
+const email = new EmailNotification(emailAddress, htmlBody, subject, tenantId, branchId);
+await emailSender.send(email);
+```
 
+See [`docs/developer-guide.md`](./docs/developer-guide.md) for the full guide with patterns, examples, and environment variable reference.
+
+## Folder Structure
+
+- `application/` — delivery services, queuing logic, `ITenantNameResolver` port
+- `domain/` — `Notification`, `SmsNotification`, `EmailNotification` value objects
+- `infrastructure/` — SMS and Email provider adapters (`TwilioSmsProvider`, `ConsoleSmsProvider`, etc.)
+- `presentation/` — webhook callback controllers and status endpoints
+- `prisma/` — `SmsMessage`, `EmailMessage` Prisma models
+- `docs/` — developer guide and module guide

@@ -12,7 +12,8 @@ export class SmsNotificationSender extends NotificationSender<SmsNotification> {
             notification.recipient,
             notification.body,
             notification.tenantId,
-            notification.branchId
+            notification.branchId,
+            notification.senderName  // ← passes caller-supplied name directly (Pattern 2)
         );
     }
 }

@@ -62,6 +62,8 @@ export class EnvironmentConfig {
 
     public readonly twilioFromNumber: string;
 
+    public readonly twilioAlphaSender: string;
+
     public readonly twilioValidateSignature: boolean;
 
     public readonly emailProviderType: 'sendgrid' | 'console';
@@ -98,6 +100,7 @@ export class EnvironmentConfig {
         this.twilioAccountSid = env.TWILIO_ACCOUNT_SID ?? '';
         this.twilioAuthToken = env.TWILIO_AUTH_TOKEN ?? '';
         this.twilioFromNumber = env.TWILIO_FROM_NUMBER ?? '';
+        this.twilioAlphaSender = env.TWILIO_ALPHA_SENDER ?? '';
         this.twilioValidateSignature = parseBoolean(env.TWILIO_VALIDATE_SIGNATURE, false);
 
         // Outbound Email & SendGrid Setup
