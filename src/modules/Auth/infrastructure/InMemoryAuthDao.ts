@@ -15,6 +15,7 @@ type AuthSeed = AuthPrincipalDto & {
 
 export class InMemoryAuthDao implements AuthDao {
     private readonly usersByIdentifier = new Map<string, AuthSeed>();
+    private readonly otps = new Map<string, { token: string; otpHash: string; expiresAt: Date }>();
 
     public constructor(seedUsers: AuthSeed[] = []) {
         for (const user of seedUsers) {
@@ -92,5 +93,30 @@ export class InMemoryAuthDao implements AuthDao {
     public async isAccountLocked(identifier: string): Promise<boolean> {
         const user = this.usersByIdentifier.get(identifier);
         return !!user?.isLocked;
+    }
+
+    public async saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void> {
+        this.otps.set(otp.token, { ...otp });
+    }
+
+    public async findOtp(token: string): Promise<{ token: string; otpHash: string; expiresAt: Date } | null> {
+        const otp = this.otps.get(token);
+        return otp ? { ...otp } : null;
+    }
+
+    public async deleteOtp(token: string): Promise<void> {
+        this.otps.delete(token);
+    }
+
+    public async deleteExpiredOtps(): Promise<number> {
+        let count = 0;
+        const now = new Date();
+        for (const [token, otp] of this.otps.entries()) {
+            if (now > otp.expiresAt) {
+                this.otps.delete(token);
+                count++;
+            }
+        }
+        return count;
     }
 }

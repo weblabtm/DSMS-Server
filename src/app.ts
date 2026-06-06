@@ -23,12 +23,17 @@ import { RedisConnection } from './infrastructure/redis/redis-connection.js';
 import { BruteForceProtectionService } from './modules/Auth/application/services/BruteForceProtectionService.js';
 import { RedisBruteForceStore } from './modules/Auth/infrastructure/RedisBruteForceStore.js';
 import { TurnstileCaptchaValidator } from './modules/Auth/infrastructure/captcha/TurnstileCaptchaValidator.js';
+import { GoogleCaptchaValidator } from './modules/Auth/infrastructure/captcha/GoogleCaptchaValidator.js';
+import { OtpService } from './modules/Auth/application/services/OtpService.js';
+import { type IOtpNotificationService } from './modules/Auth/application/services/IOtpNotificationService.js';
+import { CronScheduler } from './shared/infrastructure/cron/CronScheduler.js';
+import { OtpCleanupCronJob } from './modules/Auth/application/services/OtpCleanupCronJob.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
 import { TwilioSmsProvider } from './modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
 import { TextLkSmsProvider } from './modules/Notification/infrastructure/sms/TextLkSmsProvider.js';
-import { SmsNotificationService } from './modules/Notification/application/services/SmsNotificationService.js';
+import { SmsNotificationService, buildAlphaSenderId } from './modules/Notification/application/services/SmsNotificationService.js';
 import type { ITenantNameResolver } from './modules/Notification/application/services/ITenantNameResolver.js';
 import { SmsNotificationController } from './modules/Notification/presentation/controllers/SmsNotificationController.js';
 // import { createNotificationRouter } from './modules/Notification/presentation/routes/notificationRoutes.js';
@@ -39,6 +44,7 @@ import { ConsoleEmailProvider } from './modules/Notification/infrastructure/emai
 import { SendGridEmailProvider } from './modules/Notification/infrastructure/email/SendGridEmailProvider.js';
 import { EmailNotificationService } from './modules/Notification/application/services/EmailNotificationService.js';
 import { EmailRetryWorker } from './modules/Notification/application/workers/EmailRetryWorker.js';
+import { NotificationService } from './modules/Notification/application/services/NotificationService.js';
 
 type ServiceHealth = {
     status: 'connected' | 'disconnected';
@@ -104,7 +110,6 @@ export class ServerApplication {
             captchaValidator,
             emailService,
         });
-        this.authController = new AuthController(authService);
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
         this.authorizationMiddleware = new AuthorizationMiddleware(permissionGuard);
 
@@ -115,17 +120,17 @@ export class ServerApplication {
 
         // SMS Gateway Module
         let smsProvider;
-        if (environment.smsProviderType === 'twilio') {
+        if (environment.defaultSmsService === 'twilio') {
             smsProvider = new TwilioSmsProvider({
                 accountSid: environment.twilioAccountSid,
                 authToken: environment.twilioAuthToken,
                 fromNumber: environment.twilioFromNumber,
-                alphaId: environment.twilioAlphaSender || undefined,
+                alphaId: buildAlphaSenderId(environment.defaultSenderName) || undefined,
             });
-        } else if (environment.smsProviderType === 'textlk') {
+        } else if (environment.defaultSmsService === 'textlk') {
             smsProvider = new TextLkSmsProvider({
                 apiToken: environment.textLkApiToken,
-                defaultSenderId: environment.textLkSenderId,
+                defaultSenderId: environment.defaultSenderName,
             });
         } else {
             smsProvider = new ConsoleSmsProvider();
@@ -152,8 +157,10 @@ export class ServerApplication {
             prismaClient as any,
             smsProvider,
             environment.smsCallbackBaseUrl,
-            environment.twilioAlphaSender || undefined,  // system-level fallback
-            tenantNameResolver                           // Pattern 1: DIP adapter
+            environment.defaultSenderName,  // system-level fallback
+            tenantNameResolver,                          // Pattern 1: DIP adapter
+            environment.enableSms,
+            environment.defaultSmsService
         );
 
         this.smsNotificationController = new SmsNotificationController(
@@ -174,6 +181,46 @@ export class ServerApplication {
             emailRetryWorker.start();
             this.app.locals.emailRetryWorker = emailRetryWorker;
         }
+
+        const notificationService = new NotificationService(
+            emailService,
+            smsService
+        );
+
+        // OTP notification logic (decoupled bridging wrapper using text-lk/email notification services via unified NotificationService)
+        const otpNotificationService: IOtpNotificationService = {
+            sendOtp: async (recipient, otp, channel, tenantId, branchId) => {
+                const recipientObj = channel === 'email'
+                    ? { email: recipient }
+                    : { phoneNumber: recipient };
+
+                await notificationService.sendNotification(
+                    recipientObj,
+                    {
+                        subject: 'Your Verification Code',
+                        body: `Your OTP verification code is ${otp}. It is valid for 5 minutes.`,
+                    },
+                    {
+                        tenantId,
+                        branchId,
+                        channels: [channel],
+                    }
+                );
+            }
+        };
+
+        const googleCaptchaValidator = new GoogleCaptchaValidator(
+            environment.recaptchaSecretKey,
+            environment.disableCaptcha
+        );
+
+        const otpService = new OtpService(authDao, otpNotificationService);
+        this.authController = new AuthController(authService, otpService, googleCaptchaValidator);
+
+        // Application-level scheduler for background tasks (e.g. OTP cleanup)
+        const cronScheduler = new CronScheduler();
+        cronScheduler.register(new OtpCleanupCronJob(authDao));
+        this.app.locals.cronScheduler = cronScheduler;
 
         this.registerMiddleware();
         this.registerRoutes();
@@ -225,6 +272,36 @@ export class ServerApplication {
         };
     }
 
+    private createOtpRateLimiterMiddleware(bruteForceService: BruteForceProtectionService) {
+        return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+            const ip = request.ip || request.socket.remoteAddress || 'unknown';
+            try {
+                const isBlocked = await bruteForceService.isIpBlocked(ip);
+                if (isBlocked) {
+                    response.status(403).json({ message: 'Access denied. IP is temporarily blocked.' });
+                    return;
+                }
+
+                const key = `rate:ip:otp-generate:${ip}`;
+                const now = Date.now();
+                const windowSeconds = 600; // 10 minutes sliding window
+                const limit = 5; // max 5 requests per 10 minutes
+
+                await (bruteForceService as any).store.logAttempt(key, now, windowSeconds);
+                const count = await (bruteForceService as any).store.getAttemptCount(key, now - windowSeconds * 1000);
+
+                if (count > limit) {
+                    response.status(429).json({ message: 'Too many OTP generation requests. Please try again after 10 minutes.' });
+                    return;
+                }
+
+                next();
+            } catch (error) {
+                next();
+            }
+        };
+    }
+
     private createNotFoundHandler(bruteForceService: BruteForceProtectionService) {
         return async (request: Request, response: Response): Promise<void> => {
             const ip = request.ip || request.socket.remoteAddress || 'unknown';
@@ -259,7 +336,8 @@ export class ServerApplication {
         // Public slug availability check so registration can probe before authentication exists.
         this.app.get('/tenant/slug/:slug/availability', this.tenantController.checkSlugAvailability.bind(this.tenantController));
 
-        const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware);
+        const otpRateLimiter = this.createOtpRateLimiterMiddleware(this.bruteForceService);
+        const authRouter = createAuthRouter(this.authController, this.authenticationMiddleware, otpRateLimiter);
         this.app.use('/auth', authRouter);
 
         const tenantRouter = createTenantRouter(this.tenantController, this.authorizationMiddleware);

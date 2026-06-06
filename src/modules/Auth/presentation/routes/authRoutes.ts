@@ -1,8 +1,12 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { AuthenticationMiddleware } from '../../application/middleware/AuthenticationMiddleware.js';
 import type { AuthController } from '../controllers/AuthController.js';
 
-export const createAuthRouter = (controller: AuthController, authenticationMiddleware: AuthenticationMiddleware) => {
+export const createAuthRouter = (
+    controller: AuthController,
+    authenticationMiddleware: AuthenticationMiddleware,
+    otpRateLimiter: RequestHandler
+) => {
     const router = Router();
 
     // POST /auth/register
@@ -19,6 +23,12 @@ export const createAuthRouter = (controller: AuthController, authenticationMiddl
 
     // POST /auth/logout
     router.post('/logout', controller.logout.bind(controller));
+
+    // POST /auth/otp/generate
+    router.post('/otp/generate', otpRateLimiter, controller.generateOtp.bind(controller));
+
+    // POST /auth/otp/validate
+    router.post('/otp/validate', controller.validateOtp.bind(controller));
 
     return router;
 };

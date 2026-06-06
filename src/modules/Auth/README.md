@@ -44,3 +44,7 @@ Handles login, token issuance, permission checks, and access control workflows.
 **Routes:**
 - Module routes are declared under `src/modules/Auth/presentation/routes/` and mounted at the base path `/auth` by the application. Controllers include per-method route comments indicating the HTTP verb and path.
 
+---
+
+For detailed information on the OTP flow, API endpoints, and local CLI testing, refer to the [OTP Guide](file:///c:/Users/sadee/Documents/weblabtm/sadeeshaweblabtm/DSMS-Server/src/modules/Auth/docs/otp-guide.md).
+

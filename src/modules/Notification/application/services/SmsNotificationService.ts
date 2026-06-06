@@ -18,16 +18,18 @@ export class SmsNotificationService {
         private readonly provider: SmsProvider,
         private readonly callbackBaseUrl: string,
         /**
-         * System-level fallback alphanumeric sender ID (from TWILIO_ALPHA_SENDER env var).
+         * System-level fallback sender name (from DEFAULT_SENDER_NAME env var).
          * Used when neither the caller nor the resolver provides a name.
          */
-        private readonly defaultAlphaSender?: string,
+        private readonly defaultSenderName?: string,
         /**
          * Optional resolver injected at composition root (app.ts).
          * Implements ITenantNameResolver — usually a thin adapter over TenantService.
          * When provided, used as a fallback if the caller did not supply a senderName.
          */
-        private readonly tenantNameResolver?: ITenantNameResolver
+        private readonly tenantNameResolver?: ITenantNameResolver,
+        private readonly enableSms = true,
+        private readonly defaultSmsService?: string
     ) {}
 
     /**
@@ -50,6 +52,27 @@ export class SmsNotificationService {
     ) {
         if (!to) throw new Error('Recipient number "to" is required.');
         if (!body) throw new Error('Message body is required.');
+
+        if (!this.enableSms) {
+            console.log(`[SmsNotificationService] SMS service is disabled (ENABLE_SMS=false). Skipping queueing/sending for ${to}.`);
+            const smsMessage = await (this.prisma as any).smsMessage.create({
+                data: {
+                    to,
+                    body,
+                    status: 'SKIPPED',
+                    retryCount: 0,
+                    maxRetries,
+                    nextRetryAt: null,
+                    tenantId: tenantId ?? null,
+                    branchId: branchId ?? null,
+                    senderName: senderName ?? null,
+                    errorMessage: 'SMS service is disabled by configuration (ENABLE_SMS=false)',
+                },
+            });
+            return smsMessage;
+        }
+
+        console.log(`[SmsNotificationService] Queueing SMS to ${to} via default service: ${this.defaultSmsService || 'unknown'}`);
 
         const smsMessage = await (this.prisma as any).smsMessage.create({
             data: {
@@ -168,7 +191,12 @@ export class SmsNotificationService {
             }
         }
 
-        // System-level fallback (TWILIO_ALPHA_SENDER env var)
-        return this.defaultAlphaSender?.trim() || undefined;
+        // System-level fallback (DEFAULT_SENDER_NAME env var)
+        if (this.defaultSenderName) {
+            const alpha = buildAlphaSenderId(this.defaultSenderName);
+            if (alpha) return alpha;
+            return this.defaultSenderName.trim() || undefined;
+        }
+        return undefined;
     }
 }

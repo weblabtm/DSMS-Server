@@ -18,7 +18,7 @@ describe('AuthController', () => {
             refresh: vi.fn(),
         };
 
-        const controller = new AuthController(authService as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -46,7 +46,7 @@ describe('AuthController', () => {
             refresh: vi.fn(),
         };
 
-        const controller = new AuthController(authService as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -71,7 +71,7 @@ describe('AuthController', () => {
             }),
         };
 
-        const controller = new AuthController(authService as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -99,7 +99,7 @@ describe('AuthController', () => {
             logout: vi.fn(),
         };
 
-        const controller = new AuthController(authService as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -128,7 +128,7 @@ describe('AuthController', () => {
             logout: vi.fn(),
         };
 
-        const controller = new AuthController(authService as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             send: vi.fn(),
@@ -139,5 +139,98 @@ describe('AuthController', () => {
         expect(authService.logout).toHaveBeenCalledWith({ refreshToken: 'refresh-1' });
         expect(response.status).toHaveBeenCalledWith(204);
         expect(response.send).toHaveBeenCalledTimes(1);
+    });
+
+    describe('OTP endpoints', () => {
+        it('generateOtp: fails when CAPTCHA is invalid', async () => {
+            const googleCaptchaValidator = {
+                validate: vi.fn().mockResolvedValue(false),
+            };
+            const controller = new AuthController({} as never, {} as never, googleCaptchaValidator as never);
+            const response = {
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
+            };
+
+            await controller.generateOtp(
+                { body: { email: 't@e.com', captchaToken: 'bad' }, ip: '1.1.1.1', headers: {} } as never,
+                response as never
+            );
+
+            expect(googleCaptchaValidator.validate).toHaveBeenCalledWith('bad', '1.1.1.1');
+            expect(response.status).toHaveBeenCalledWith(400);
+            expect(response.json).toHaveBeenCalledWith({ message: 'Invalid CAPTCHA token' });
+        });
+
+        it('generateOtp: generates OTP and sets cookie when CAPTCHA is valid', async () => {
+            const googleCaptchaValidator = {
+                validate: vi.fn().mockResolvedValue(true),
+            };
+            const otpService = {
+                generateOtp: vi.fn().mockResolvedValue({ token: 'test-token', otp: '123456' }),
+            };
+            const controller = new AuthController({} as never, otpService as never, googleCaptchaValidator as never);
+            const response = {
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
+                cookie: vi.fn(),
+            };
+
+            await controller.generateOtp(
+                { body: { email: 't@e.com', captchaToken: 'good' }, ip: '1.1.1.1', headers: {} } as never,
+                response as never
+            );
+
+            expect(otpService.generateOtp).toHaveBeenCalledWith({
+                email: 't@e.com',
+                phoneNumber: undefined,
+                tenantId: undefined,
+                branchId: undefined,
+            });
+            expect(response.cookie).toHaveBeenCalledWith('otp_token', 'test-token', expect.any(Object));
+            expect(response.status).toHaveBeenCalledWith(200);
+            expect(response.json).toHaveBeenCalledWith({
+                message: 'OTP generated successfully.',
+                token: 'test-token',
+            });
+        });
+
+        it('validateOtp: validates OTP successfully and clears cookie', async () => {
+            const otpService = {
+                validateOtp: vi.fn().mockResolvedValue(true),
+            };
+            const controller = new AuthController({} as never, otpService as never, {} as never);
+            const response = {
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
+                clearCookie: vi.fn(),
+            };
+
+            await controller.validateOtp(
+                { body: { otp: '123456' }, cookies: { otp_token: 'test-token' }, headers: {} } as never,
+                response as never
+            );
+
+            expect(otpService.validateOtp).toHaveBeenCalledWith('test-token', '123456');
+            expect(response.clearCookie).toHaveBeenCalledWith('otp_token');
+            expect(response.status).toHaveBeenCalledWith(200);
+            expect(response.json).toHaveBeenCalledWith({ message: 'OTP verified successfully.' });
+        });
+
+        it('validateOtp: returns error if OTP token is missing', async () => {
+            const controller = new AuthController({} as never, {} as never, {} as never);
+            const response = {
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
+            };
+
+            await controller.validateOtp(
+                { body: { otp: '123456' }, cookies: {}, headers: {} } as never,
+                response as never
+            );
+
+            expect(response.status).toHaveBeenCalledWith(400);
+            expect(response.json).toHaveBeenCalledWith({ message: 'OTP token is missing.' });
+        });
     });
 });

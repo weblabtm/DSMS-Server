@@ -162,6 +162,58 @@ describe('SmsNotificationService', () => {
             data: { status: 'FAILED', errorMessage: 'Permanent fail', nextRetryAt: null },
         });
     });
+
+    it('does not attempt delivery and queues SMS with status SKIPPED when enableSms is false', async () => {
+        const mockSmsMessage = {
+            id: 'msg-skipped',
+            to: '+1234567890',
+            body: 'Hello skipped!',
+            status: 'SKIPPED',
+            retryCount: 0,
+            maxRetries: 3,
+            nextRetryAt: null,
+            tenantId: 'tenant-1',
+            branchId: 'branch-2',
+            senderName: null,
+            errorMessage: 'SMS service is disabled by configuration (ENABLE_SMS=false)',
+        };
+
+        const prismaMock = makeSmsPrisma(mockSmsMessage) as any;
+        const providerMock = {
+            sendSms: vi.fn(),
+        } as SmsProvider;
+
+        const service = new SmsNotificationService(
+            prismaMock,
+            providerMock,
+            'http://test-base.com',
+            undefined,
+            undefined,
+            false
+        );
+
+        const attemptDeliverySpy = vi.spyOn(service, 'attemptDelivery').mockResolvedValue(undefined);
+
+        const result = await service.queueSms('+1234567890', 'Hello skipped!', 'tenant-1', 'branch-2');
+
+        expect(prismaMock.smsMessage.create).toHaveBeenCalledWith({
+            data: {
+                to: '+1234567890',
+                body: 'Hello skipped!',
+                status: 'SKIPPED',
+                retryCount: 0,
+                maxRetries: 3,
+                nextRetryAt: null,
+                tenantId: 'tenant-1',
+                branchId: 'branch-2',
+                senderName: null,
+                errorMessage: 'SMS service is disabled by configuration (ENABLE_SMS=false)',
+            }
+        });
+        expect(result.id).toBe('msg-skipped');
+        expect(result.status).toBe('SKIPPED');
+        expect(attemptDeliverySpy).not.toHaveBeenCalled();
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -218,7 +270,7 @@ describe('SmsNotificationService — sender resolution', () => {
         expect(resolver.resolveNameById).toHaveBeenCalledWith('tenant-abc');
     });
 
-    it('falls back to defaultAlphaSender when resolver returns nothing', async () => {
+    it('falls back to defaultSenderName when resolver returns nothing', async () => {
         const sms = baseSms({ tenantId: 'tenant-xyz', senderName: null });
         const prismaMock = makeSmsPrisma(sms) as any;
 
@@ -237,7 +289,7 @@ describe('SmsNotificationService — sender resolution', () => {
         expect(capturedFrom).toBe('DSMS');
     });
 
-    it('falls back to defaultAlphaSender when resolver throws', async () => {
+    it('falls back to defaultSenderName when resolver throws', async () => {
         const sms = baseSms({ tenantId: 'bad-tenant', senderName: null });
         const prismaMock = makeSmsPrisma(sms) as any;
 

@@ -73,6 +73,10 @@ class ServerBootstrap {
     }
 
     private async stop(): Promise<void> {
+        if (this.application.locals.cronScheduler) {
+            this.application.locals.cronScheduler.stopAll();
+        }
+
         if (this.application.locals.smsRetryWorker) {
             this.application.locals.smsRetryWorker.stop();
         }
