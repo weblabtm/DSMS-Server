@@ -100,11 +100,11 @@ We have provided a CLI testing script to automate testing the OTP flow locally.
 ### Run the Script:
 You can run the script and specify the recipient details as flags:
 ```bash
-npx tsx src/scripts/test-otp.ts --email "user@email.com" --phone "+94771234567"
+npx tsx scripts/test-otp.ts --email "user@email.com" --phone "+94771234567"
 ```
 Or run it interactively:
 ```bash
-npx tsx src/scripts/test-otp.ts
+npx tsx scripts/test-otp.ts
 ```
 
 ### Validation Failure / Regenerating Loop:

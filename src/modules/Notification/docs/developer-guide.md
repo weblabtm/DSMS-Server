@@ -192,11 +192,11 @@ SMS_CALLBACK_BASE_URL=http://localhost:3000
 Use the built-in test script to verify your Twilio setup and the alphanumeric sender feature:
 
 ```bash
-# Basic test — sends from TWILIO_FROM_NUMBER or TWILIO_ALPHA_SENDER (from .env)
-npx tsx src/scripts/test-twilio.ts +94771234567
+# Basic test — sends from TWILIO_FROM_NUMBER or DEFAULT_SENDER_NAME (from .env)
+npx tsx scripts/test-twilio.ts +94771234567
 
 # Test with a specific tenant name as the sender
-npx tsx src/scripts/test-twilio.ts +94771234567 "TechSchool"
+npx tsx scripts/test-twilio.ts +94771234567 "TechSchool"
 ```
 
 The script prints which sender is active and confirms whether the alpha ID was used.
@@ -208,11 +208,11 @@ The script prints which sender is active and confirms whether the alpha ID was u
 Use the built-in test script to verify your Text.lk Sri Lanka SMS Gateway setup:
 
 ```bash
-# Basic test — sends from TEXT_LK_SENDER_ID (from .env)
-npx tsx src/scripts/test-textlk.ts 94771234567
+# Basic test — sends from DEFAULT_SENDER_NAME (from .env)
+npx tsx scripts/test-textlk.ts 94771234567
 
 # Test with a specific tenant name as the sender
-npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"
+npx tsx scripts/test-textlk.ts 94771234567 "TechSchool"
 ```
 
 ---
@@ -229,8 +229,16 @@ npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"
 | `DEFAULT_SENDER_NAME` | Optional | System-level default sender name (max 11 chars, defaults to 'WEBBLAB') |
 | `SMS_CALLBACK_BASE_URL` | ✅ | Base URL for Twilio status callbacks |
 | `TEXT_LK_API_TOKEN` | When textlk | Text.lk Bearer API Token |
-| `EMAIL_PROVIDER_TYPE` | ✅ | `sendgrid` or `console` |
+| `ENABLE_EMAIL` | Optional | Toggles Email functionality on or off (default `true`) |
+| `DEFAULT_EMAIL_SERVICE` | ✅ | The active Email provider type: `sendgrid`, `nodemailer`, or `console` |
 | `SENDGRID_API_KEY` | When sendgrid | SendGrid API key |
 | `SENDGRID_FROM_EMAIL` | When sendgrid | Verified sender email |
 | `SENDGRID_FROM_NAME` | Optional | Display name for outbound emails |
+| `SMTP_HOST` | When nodemailer | Host address of SMTP server |
+| `SMTP_PORT` | When nodemailer | Port of SMTP server (default `587`) |
+| `SMTP_SECURE` | Optional | Toggles SSL/TLS mode (default `false`) |
+| `SMTP_USER` | Optional | Authentication username for SMTP server |
+| `SMTP_PASS` | Optional | Authentication password for SMTP server |
+| `SMTP_FROM_EMAIL` | When nodemailer | Default email sender address |
+| `SMTP_FROM_NAME` | Optional | Outbound display name for SMTP |
 
