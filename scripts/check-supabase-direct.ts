@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PrismaClient } from '../generated/prisma/client.js';
+import { PrismaClient } from '../src/generated/prisma/client.js';
 
 const resolveDatabaseUrl = (): string | undefined => {
     const argUrl = process.argv[2]?.trim();

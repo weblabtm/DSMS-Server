@@ -1,8 +1,8 @@
 import 'dotenv/config';
 
-import { EnvironmentConfig } from '../config/environment.js';
-import { DatabaseConnection } from '../infrastructure/database/database-connection.js';
-import { bootstrapSuperAdmin } from '../modules/Auth/infrastructure/SuperAdminBootstrap.js';
+import { EnvironmentConfig } from '../src/config/environment.js';
+import { DatabaseConnection } from '../src/infrastructure/database/database-connection.js';
+import { bootstrapSuperAdmin } from '../src/modules/Auth/infrastructure/SuperAdminBootstrap.js';
 
 async function run(): Promise<void> {
     const env = EnvironmentConfig.fromProcessEnv();

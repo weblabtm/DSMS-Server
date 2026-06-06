@@ -4,15 +4,15 @@
  * Verifies Text.lk API credentials and tests alphanumeric sender IDs.
  *
  * Usage:
- *   npx tsx src/scripts/test-textlk.ts <RECIPIENT_NUMBER> [TENANT_NAME]
+ *   npx tsx scripts/test-textlk.ts <RECIPIENT_NUMBER> [TENANT_NAME]
  *
  * Examples:
- *   npx tsx src/scripts/test-textlk.ts 94771234567
- *   npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"
+ *   npx tsx scripts/test-textlk.ts 94771234567
+ *   npx tsx scripts/test-textlk.ts 94771234567 "TechSchool"
  */
 import 'dotenv/config';
-import { TextLkSmsProvider } from '../modules/Notification/infrastructure/sms/TextLkSmsProvider.js';
-import { buildAlphaSenderId } from '../modules/Notification/application/services/SmsNotificationService.js';
+import { TextLkSmsProvider } from '../src/modules/Notification/infrastructure/sms/TextLkSmsProvider.js';
+import { buildAlphaSenderId } from '../src/modules/Notification/application/services/SmsNotificationService.js';
 
 async function main() {
     const apiToken = process.env.TEXT_LK_API_TOKEN ?? '';
@@ -52,10 +52,10 @@ async function main() {
 
     if (!recipient) {
         console.log('\nUsage:');
-        console.log('  npx tsx src/scripts/test-textlk.ts <RECIPIENT_NUMBER> [TENANT_NAME]');
+        console.log('  npx tsx scripts/test-textlk.ts <RECIPIENT_NUMBER> [TENANT_NAME]');
         console.log('\nExamples:');
-        console.log('  npx tsx src/scripts/test-textlk.ts 94771234567');
-        console.log('  npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"');
+        console.log('  npx tsx scripts/test-textlk.ts 94771234567');
+        console.log('  npx tsx scripts/test-textlk.ts 94771234567 "TechSchool"');
         console.log('\nAlphanumeric Sender ID rules:');
         console.log('  • Max 11 characters (letters & digits only — spaces and symbols stripped)');
         console.log('  • One-way only — recipients cannot reply');
