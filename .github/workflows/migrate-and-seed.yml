@@ -48,7 +48,7 @@ jobs:
           if [ -f dist/scripts/seed-rbac.js ]; then
             node dist/scripts/seed-rbac.js
           else
-            npx tsx src/scripts/seed-rbac.ts
+            npx tsx scripts/seed-rbac.ts
           fi
 
       - name: Bootstrap Super Admin (optional, secret-backed)
@@ -61,5 +61,5 @@ jobs:
           if [ -f dist/scripts/bootstrap-super-admin.js ]; then
             node dist/scripts/bootstrap-super-admin.js
           else
-            npx tsx src/scripts/bootstrap-super-admin.ts
+            npx tsx scripts/bootstrap-super-admin.ts
           fi

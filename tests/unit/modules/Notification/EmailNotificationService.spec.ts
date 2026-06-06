@@ -33,7 +33,7 @@ describe('EmailNotificationService', () => {
             sendEmail: vi.fn().mockResolvedValue({ success: true, providerMessageId: 'sg-sid-1' }),
         } as EmailProvider;
 
-        const service = new EmailNotificationService(prismaMock, providerMock);
+        const service = new EmailNotificationService(prismaMock, providerMock, true, 'console', 'WEBBLAB');
         
         // Spy on attemptDelivery
         const attemptDeliverySpy = vi.spyOn(service, 'attemptDelivery').mockResolvedValue(undefined);
@@ -44,7 +44,7 @@ describe('EmailNotificationService', () => {
             data: {
                 to: 'test@email.com',
                 subject: 'Test Subject',
-                body: 'Hello TDD!',
+                body: expect.stringContaining('Hello TDD!'),
                 status: 'PENDING',
                 retryCount: 0,
                 maxRetries: 3,
@@ -189,5 +189,64 @@ describe('EmailNotificationService', () => {
                 nextRetryAt: null,
             },
         });
+    });
+
+    it('skips queuing and writes SKIPPED status when enableEmail is false', async () => {
+        const mockEmailMessage = {
+            id: 'msg-skipped',
+            to: 'skipped@email.com',
+            subject: 'Skipped Subject',
+            body: 'Hello Skiped!',
+            status: 'SKIPPED',
+            retryCount: 0,
+            maxRetries: 3,
+            nextRetryAt: null,
+            tenantId: 'tenant-1',
+            branchId: 'branch-2',
+        };
+
+        const createMock = vi.fn().mockResolvedValue(mockEmailMessage);
+        const prismaMock = {
+            emailMessage: {
+                create: createMock,
+            }
+        } as any;
+
+        const providerMock = {
+            sendEmail: vi.fn(),
+        } as EmailProvider;
+
+        const service = new EmailNotificationService(prismaMock, providerMock, false, 'console', 'WEBBLAB');
+        const attemptDeliverySpy = vi.spyOn(service, 'attemptDelivery');
+
+        const result = await service.queueEmail('skipped@email.com', 'Skipped Subject', 'Hello Skiped!', 'tenant-1', 'branch-2');
+
+        expect(createMock).toHaveBeenCalledWith({
+            data: {
+                to: 'skipped@email.com',
+                subject: 'Skipped Subject',
+                body: expect.stringContaining('Hello Skiped!'),
+                status: 'SKIPPED',
+                retryCount: 0,
+                maxRetries: 3,
+                nextRetryAt: null,
+                tenantId: 'tenant-1',
+                branchId: 'branch-2',
+                errorMessage: 'Email service is disabled by configuration (ENABLE_EMAIL=false)',
+            }
+        });
+        expect(result.status).toBe('SKIPPED');
+        expect(attemptDeliverySpy).not.toHaveBeenCalled();
+    });
+
+    it('wraps email body in a premium HSL/CSS styled HTML template structure', () => {
+        const service = new EmailNotificationService({} as any, {} as any, true, 'console', 'TESTBRAND');
+        const html = service.wrapInHtmlTemplate('This is a test notification body.');
+
+        expect(html).toContain('<!DOCTYPE html>');
+        expect(html).toContain('TESTBRAND');
+        expect(html).toContain('This is a test notification body.');
+        expect(html).toContain('SECURE NOTIFICATION ENGINE');
+        expect(html).toContain('font-family: \'Inter\'');
     });
 });

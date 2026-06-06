@@ -134,4 +134,43 @@ export class PrismaAuthDao implements AuthDao {
         });
         return !!user?.isLocked;
     }
+
+    public async saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void> {
+        await (this.prisma as any).otp.create({
+            data: {
+                token: otp.token,
+                otpHash: otp.otpHash,
+                expiresAt: otp.expiresAt,
+            },
+        });
+    }
+
+    public async findOtp(token: string): Promise<{ token: string; otpHash: string; expiresAt: Date } | null> {
+        const record = await (this.prisma as any).otp.findUnique({
+            where: { token },
+        });
+        if (!record) return null;
+        return {
+            token: record.token,
+            otpHash: record.otpHash,
+            expiresAt: record.expiresAt,
+        };
+    }
+
+    public async deleteOtp(token: string): Promise<void> {
+        await (this.prisma as any).otp.deleteMany({
+            where: { token },
+        });
+    }
+
+    public async deleteExpiredOtps(): Promise<number> {
+        const result = await (this.prisma as any).otp.deleteMany({
+            where: {
+                expiresAt: {
+                    lt: new Date(),
+                },
+            },
+        });
+        return result.count;
+    }
 }

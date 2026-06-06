@@ -52,6 +52,17 @@ model AuthUser {
 }
 
 
+// ===== src\modules\Auth\prisma\Otp.prisma =====
+model Otp {
+  token     String   @id
+  otpHash   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+
 // ===== src\modules\Auth\prisma\Permission.prisma =====
 model Permission {
   id         String           @id @default(cuid())
@@ -160,6 +171,7 @@ model SmsMessage {
   nextRetryAt       DateTime?
   tenantId          String?
   branchId          String?
+  senderName        String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

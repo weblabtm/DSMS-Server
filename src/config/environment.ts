@@ -52,9 +52,13 @@ export class EnvironmentConfig {
 
     public readonly enableSwaggerDocs: boolean;
 
-    public readonly smsProviderType: 'twilio' | 'textlk' | 'console';
+    public readonly enableSms: boolean;
+
+    public readonly defaultSmsService: 'twilio' | 'textlk' | 'console';
 
     public readonly smsCallbackBaseUrl: string;
+
+    public readonly defaultSenderName: string;
 
     public readonly twilioAccountSid: string;
 
@@ -62,15 +66,13 @@ export class EnvironmentConfig {
 
     public readonly twilioFromNumber: string;
 
-    public readonly twilioAlphaSender: string;
-
     public readonly twilioValidateSignature: boolean;
 
     public readonly textLkApiToken: string;
 
-    public readonly textLkSenderId: string;
+    public readonly enableEmail: boolean;
 
-    public readonly emailProviderType: 'sendgrid' | 'console';
+    public readonly defaultEmailService: 'sendgrid' | 'nodemailer' | 'console';
 
     public readonly sendgridApiKey: string;
 
@@ -78,7 +80,23 @@ export class EnvironmentConfig {
 
     public readonly sendgridFromName: string;
 
+    public readonly smtpHost: string;
+
+    public readonly smtpPort: number;
+
+    public readonly smtpSecure: boolean;
+
+    public readonly smtpUser: string;
+
+    public readonly smtpPass: string;
+
+    public readonly smtpFromEmail: string;
+
+    public readonly smtpFromName: string;
+
     public readonly turnstileSecretKey: string;
+
+    public readonly recaptchaSecretKey: string;
 
     public readonly disableCaptcha: boolean;
 
@@ -99,32 +117,50 @@ export class EnvironmentConfig {
         this.enableSwaggerDocs = String(env.ENABLE_SWAGGER_DOCS ?? '').toLowerCase() === 'true';
 
         // Outbound SMS & Twilio / TextLk Setup
-        const rawProvider = env.SMS_PROVIDER_TYPE?.toLowerCase();
+        this.enableSms = parseBoolean(env.ENABLE_SMS, true);
+        const rawProvider = env.DEFAULT_SMS_SERVICE?.toLowerCase();
         if (rawProvider === 'twilio') {
-            this.smsProviderType = 'twilio';
+            this.defaultSmsService = 'twilio';
         } else if (rawProvider === 'textlk') {
-            this.smsProviderType = 'textlk';
+            this.defaultSmsService = 'textlk';
         } else {
-            this.smsProviderType = 'console';
+            this.defaultSmsService = 'console';
         }
         this.smsCallbackBaseUrl = env.SMS_CALLBACK_BASE_URL ?? 'http://localhost:3000';
+        this.defaultSenderName = env.DEFAULT_SENDER_NAME ?? 'WEBBLAB';
         this.twilioAccountSid = env.TWILIO_ACCOUNT_SID ?? '';
         this.twilioAuthToken = env.TWILIO_AUTH_TOKEN ?? '';
         this.twilioFromNumber = env.TWILIO_FROM_NUMBER ?? '';
-        this.twilioAlphaSender = env.TWILIO_ALPHA_SENDER ?? '';
         this.twilioValidateSignature = parseBoolean(env.TWILIO_VALIDATE_SIGNATURE, false);
 
         this.textLkApiToken = env.TEXT_LK_API_TOKEN ?? '';
-        this.textLkSenderId = env.TEXT_LK_SENDER_ID ?? '';
 
-        // Outbound Email & SendGrid Setup
-        this.emailProviderType = (env.EMAIL_PROVIDER_TYPE === 'sendgrid' ? 'sendgrid' : 'console') as 'sendgrid' | 'console';
+        // Outbound Email & SendGrid/Nodemailer Setup
+        this.enableEmail = parseBoolean(env.ENABLE_EMAIL, true);
+        const rawEmailProvider = (env.DEFAULT_EMAIL_SERVICE ?? env.EMAIL_PROVIDER_TYPE)?.toLowerCase();
+        if (rawEmailProvider === 'sendgrid') {
+            this.defaultEmailService = 'sendgrid';
+        } else if (rawEmailProvider === 'nodemailer') {
+            this.defaultEmailService = 'nodemailer';
+        } else {
+            this.defaultEmailService = 'console';
+        }
+
         this.sendgridApiKey = env.SENDGRID_API_KEY ?? '';
         this.sendgridFromEmail = env.SENDGRID_FROM_EMAIL ?? '';
         this.sendgridFromName = env.SENDGRID_FROM_NAME ?? 'DSMS';
 
+        this.smtpHost = env.SMTP_HOST ?? '';
+        this.smtpPort = parsePort(env.SMTP_PORT, 587);
+        this.smtpSecure = parseBoolean(env.SMTP_SECURE, false);
+        this.smtpUser = env.SMTP_USER ?? '';
+        this.smtpPass = env.SMTP_PASS ?? '';
+        this.smtpFromEmail = env.SMTP_FROM_EMAIL ?? '';
+        this.smtpFromName = env.SMTP_FROM_NAME ?? 'DSMS';
+
         // CAPTCHA Setup
         this.turnstileSecretKey = env.TURNSTILE_SECRET_KEY ?? '';
+        this.recaptchaSecretKey = env.GOOGLE_reCAPTCHA_SECRET_KEY ?? '';
         this.disableCaptcha = parseBoolean(env.DISABLE_CAPTCHA, true);
     }
 

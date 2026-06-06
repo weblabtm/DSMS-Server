@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { SendGridEmailProvider } from '../modules/Notification/infrastructure/email/SendGridEmailProvider.js';
+import { SendGridEmailProvider } from '../src/modules/Notification/infrastructure/email/SendGridEmailProvider.js';
 
 async function main() {
     const apiKey = process.env.SENDGRID_API_KEY ?? '';
@@ -20,8 +20,8 @@ async function main() {
     
     const recipient = process.argv[2];
     if (!recipient) {
-        console.log('\nUsage: npx tsx src/scripts/test-sendgrid.ts <RECIPIENT_EMAIL_ADDRESS>');
-        console.log('Example: npx tsx src/scripts/test-sendgrid.ts user@example.com');
+        console.log('\nUsage: npx tsx scripts/test-sendgrid.ts <RECIPIENT_EMAIL_ADDRESS>');
+        console.log('Example: npx tsx scripts/test-sendgrid.ts user@example.com');
         process.exit(1);
     }
 

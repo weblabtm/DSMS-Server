@@ -15,4 +15,12 @@ export interface AuthDao {
     unlockAccountByToken(token: string): Promise<boolean>;
 
     isAccountLocked(identifier: string): Promise<boolean>;
+
+    saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void>;
+
+    findOtp(token: string): Promise<{ token: string; otpHash: string; expiresAt: Date } | null>;
+
+    deleteOtp(token: string): Promise<void>;
+
+    deleteExpiredOtps(): Promise<number>;
 }

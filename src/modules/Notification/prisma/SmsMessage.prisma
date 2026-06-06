@@ -10,6 +10,7 @@ model SmsMessage {
   nextRetryAt       DateTime?
   tenantId          String?
   branchId          String?
+  senderName        String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

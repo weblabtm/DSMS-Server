@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import 'dotenv/config';
-import { DatabaseConnection } from '../infrastructure/database/database-connection.js';
+import { DatabaseConnection } from '../src/infrastructure/database/database-connection.js';
 
 function usage() {
     console.log('Usage: npm run remove-tenant -- <identifier> [--confirm] [--force]');

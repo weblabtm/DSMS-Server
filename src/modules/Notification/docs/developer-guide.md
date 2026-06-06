@@ -114,7 +114,7 @@ If you do **not** supply a `senderName`, the system resolves the sender automati
 ```
 1. senderName on the message          ← you provided it (fastest, no DB hit)
 2. ITenantNameResolver (DIP adapter)  ← looks up tenant name via TenantService
-3. TWILIO_ALPHA_SENDER env var        ← system-level fallback name
+3. DEFAULT_SENDER_NAME env var        ← system-level fallback name
 4. TWILIO_FROM_NUMBER                 ← phone number (final fallback)
 ```
 
@@ -173,7 +173,8 @@ The wiring happens **only in `app.ts`** (the composition root), where a thin ada
 Set your `.env` to use the Console mock — no Twilio API calls, no charges:
 
 ```dotenv
-SMS_PROVIDER_TYPE=console
+ENABLE_SMS=true
+DEFAULT_SMS_SERVICE=console
 EMAIL_PROVIDER_TYPE=console
 SMS_CALLBACK_BASE_URL=http://localhost:3000
 ```
@@ -191,11 +192,11 @@ SMS_CALLBACK_BASE_URL=http://localhost:3000
 Use the built-in test script to verify your Twilio setup and the alphanumeric sender feature:
 
 ```bash
-# Basic test — sends from TWILIO_FROM_NUMBER or TWILIO_ALPHA_SENDER (from .env)
-npx tsx src/scripts/test-twilio.ts +94771234567
+# Basic test — sends from TWILIO_FROM_NUMBER or DEFAULT_SENDER_NAME (from .env)
+npx tsx scripts/test-twilio.ts +94771234567
 
 # Test with a specific tenant name as the sender
-npx tsx src/scripts/test-twilio.ts +94771234567 "TechSchool"
+npx tsx scripts/test-twilio.ts +94771234567 "TechSchool"
 ```
 
 The script prints which sender is active and confirms whether the alpha ID was used.
@@ -207,11 +208,11 @@ The script prints which sender is active and confirms whether the alpha ID was u
 Use the built-in test script to verify your Text.lk Sri Lanka SMS Gateway setup:
 
 ```bash
-# Basic test — sends from TEXT_LK_SENDER_ID (from .env)
-npx tsx src/scripts/test-textlk.ts 94771234567
+# Basic test — sends from DEFAULT_SENDER_NAME (from .env)
+npx tsx scripts/test-textlk.ts 94771234567
 
 # Test with a specific tenant name as the sender
-npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"
+npx tsx scripts/test-textlk.ts 94771234567 "TechSchool"
 ```
 
 ---
@@ -220,16 +221,24 @@ npx tsx src/scripts/test-textlk.ts 94771234567 "TechSchool"
 
 | Variable | Required | Description |
 |---|---|---|
-| `SMS_PROVIDER_TYPE` | ✅ | `twilio`, `textlk`, or `console` |
+| `ENABLE_SMS` | Optional | Toggles SMS functionality on or off (default `true`) |
+| `DEFAULT_SMS_SERVICE` | ✅ | The active SMS provider type: `twilio`, `textlk`, or `console` |
 | `TWILIO_ACCOUNT_SID` | When twilio | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | When twilio | Twilio auth token |
 | `TWILIO_FROM_NUMBER` | When twilio | Registered Twilio phone number (E.164) |
-| `TWILIO_ALPHA_SENDER` | Optional | System-level alphanumeric sender name (max 11 chars) |
+| `DEFAULT_SENDER_NAME` | Optional | System-level default sender name (max 11 chars, defaults to 'WEBBLAB') |
 | `SMS_CALLBACK_BASE_URL` | ✅ | Base URL for Twilio status callbacks |
 | `TEXT_LK_API_TOKEN` | When textlk | Text.lk Bearer API Token |
-| `TEXT_LK_SENDER_ID` | When textlk | Default Text.lk Sender ID (max 11 chars) |
-| `EMAIL_PROVIDER_TYPE` | ✅ | `sendgrid` or `console` |
+| `ENABLE_EMAIL` | Optional | Toggles Email functionality on or off (default `true`) |
+| `DEFAULT_EMAIL_SERVICE` | ✅ | The active Email provider type: `sendgrid`, `nodemailer`, or `console` |
 | `SENDGRID_API_KEY` | When sendgrid | SendGrid API key |
 | `SENDGRID_FROM_EMAIL` | When sendgrid | Verified sender email |
 | `SENDGRID_FROM_NAME` | Optional | Display name for outbound emails |
+| `SMTP_HOST` | When nodemailer | Host address of SMTP server |
+| `SMTP_PORT` | When nodemailer | Port of SMTP server (default `587`) |
+| `SMTP_SECURE` | Optional | Toggles SSL/TLS mode (default `false`) |
+| `SMTP_USER` | Optional | Authentication username for SMTP server |
+| `SMTP_PASS` | Optional | Authentication password for SMTP server |
+| `SMTP_FROM_EMAIL` | When nodemailer | Default email sender address |
+| `SMTP_FROM_NAME` | Optional | Outbound display name for SMTP |
 

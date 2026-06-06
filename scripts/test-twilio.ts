@@ -4,11 +4,11 @@
  * Verifies Twilio credentials and tests the alphanumeric sender ID feature.
  *
  * Usage:
- *   npx tsx src/scripts/test-twilio.ts <RECIPIENT_NUMBER> [TENANT_NAME]
+ *   npx tsx scripts/test-twilio.ts <RECIPIENT_NUMBER> [TENANT_NAME]
  *
  * Examples:
- *   npx tsx src/scripts/test-twilio.ts +94771234567
- *   npx tsx src/scripts/test-twilio.ts +94771234567 "TechSchool"
+ *   npx tsx scripts/test-twilio.ts +94771234567
+ *   npx tsx scripts/test-twilio.ts +94771234567 "TechSchool"
  *
  * When TENANT_NAME is supplied it is used as the Twilio From sender (simulating
  * what happens in production when a tenant's registered name is passed to
@@ -16,8 +16,8 @@
  * env var, then TWILIO_FROM_NUMBER.
  */
 import 'dotenv/config';
-import { TwilioSmsProvider } from '../modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
-import { buildAlphaSenderId } from '../modules/Notification/application/services/SmsNotificationService.js';
+import { TwilioSmsProvider } from '../src/modules/Notification/infrastructure/sms/TwilioSmsProvider.js';
+import { buildAlphaSenderId } from '../src/modules/Notification/application/services/SmsNotificationService.js';
 
 async function main() {
     const accountSid = process.env.TWILIO_ACCOUNT_SID  ?? '';
@@ -62,10 +62,10 @@ async function main() {
 
     if (!recipient) {
         console.log('\nUsage:');
-        console.log('  npx tsx src/scripts/test-twilio.ts <RECIPIENT_NUMBER> [TENANT_NAME]');
+        console.log('  npx tsx scripts/test-twilio.ts <RECIPIENT_NUMBER> [TENANT_NAME]');
         console.log('\nExamples:');
-        console.log('  npx tsx src/scripts/test-twilio.ts +94771234567');
-        console.log('  npx tsx src/scripts/test-twilio.ts +94771234567 "TechSchool"');
+        console.log('  npx tsx scripts/test-twilio.ts +94771234567');
+        console.log('  npx tsx scripts/test-twilio.ts +94771234567 "TechSchool"');
         console.log('\nAlphanumeric Sender ID rules:');
         console.log('  • Max 11 characters (letters & digits only — spaces and symbols stripped)');
         console.log('  • One-way only — recipients cannot reply');
