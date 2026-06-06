@@ -20,7 +20,8 @@ export class PrismaSessionService {
         const refreshToken = randomUUID();
         const refreshHash = this.hashToken(refreshToken);
         const now = Math.floor(Date.now() / 1000);
-        const expiresAt = new Date((now + this.refreshTokenTtlSeconds) * 1000);
+        const ttl = input.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
+        const expiresAt = new Date((now + ttl) * 1000);
 
         const created = await (this.prisma as any).authSession.create({
             data: {
@@ -31,6 +32,7 @@ export class PrismaSessionService {
                 tenantId: input.tenantId,
                 branchId: input.branchId,
                 expiresAt,
+                rememberMe: input.rememberMe ?? false,
             },
         });
 
@@ -47,6 +49,7 @@ export class PrismaSessionService {
             createdAt: Math.floor(created.createdAt.getTime() / 1000),
             expiresAt: Math.floor(created.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(created.updatedAt.getTime() / 1000),
+            rememberMe: created.rememberMe,
         };
 
         return record;
@@ -99,6 +102,7 @@ export class PrismaSessionService {
             createdAt: Math.floor(found.createdAt.getTime() / 1000),
             expiresAt: Math.floor(found.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(found.updatedAt.getTime() / 1000),
+            rememberMe: found.rememberMe,
         };
     }
 
@@ -167,6 +171,7 @@ export class PrismaSessionService {
             createdAt: Math.floor(existingRow.createdAt.getTime() / 1000),
             expiresAt: Math.floor(existingRow.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(existingRow.updatedAt.getTime() / 1000),
+            rememberMe: existingRow.rememberMe,
         };
 
         // Check if the token sent is the previous token
@@ -205,7 +210,8 @@ export class PrismaSessionService {
         // Standard rotation:
         const newRefresh = this.deriveNextToken(refreshToken);
         const newHash = this.hashToken(newRefresh);
-        const newExpires = new Date((now + this.refreshTokenTtlSeconds) * 1000);
+        const ttl = existingRow.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
+        const newExpires = new Date((now + ttl) * 1000);
 
         const updated = await (this.prisma as any).authSession.update({
             where: { id: existing.sessionId },
@@ -221,7 +227,7 @@ export class PrismaSessionService {
         if (redisClient) {
             try {
                 await redisClient.set(`blacklist:refresh_token:${hash}`, `rotated:${Date.now()}`, {
-                    EX: this.refreshTokenTtlSeconds
+                    EX: ttl
                 });
             } catch (err) {
                 // Non-fatal
@@ -252,6 +258,7 @@ export class PrismaSessionService {
             createdAt: Math.floor(updated.createdAt.getTime() / 1000),
             expiresAt: Math.floor(updated.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(updated.updatedAt.getTime() / 1000),
+            rememberMe: updated.rememberMe,
         };
     }
 
@@ -268,14 +275,15 @@ export class PrismaSessionService {
         const redis = this.redisConnection?.getClient();
         if (redis && session) {
             try {
+                const ttl = session.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
                 if (session.refreshTokenHash) {
                     await redis.set(`blacklist:refresh_token:${session.refreshTokenHash}`, 'revoked', {
-                        EX: this.refreshTokenTtlSeconds
+                        EX: ttl
                     });
                 }
                 if (session.previousTokenHash) {
                     await redis.set(`blacklist:refresh_token:${session.previousTokenHash}`, 'revoked', {
-                        EX: this.refreshTokenTtlSeconds
+                        EX: ttl
                     });
                 }
             } catch (err) {

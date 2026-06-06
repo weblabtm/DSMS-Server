@@ -11,6 +11,7 @@ export type AuthLoginRequestDto = {
     branchId?: string;
     ipAddress?: string;
     captchaToken?: string;
+    rememberMe?: boolean;
 };
 
 export type AuthRegisterRequestDto = {

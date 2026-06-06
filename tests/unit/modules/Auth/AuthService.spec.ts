@@ -208,4 +208,48 @@ describe('AuthService', () => {
             password: 'password',
         })).rejects.toThrow('Account is locked. Please check your email to unlock it.');
     });
+
+    it('passes rememberMe parameter during login down to session service', async () => {
+        const tokenService = new TokenService('test-secret');
+        const mockSession = {
+            sessionId: 'sess-123',
+            refreshToken: 'ref-123',
+            accessToken: 'acc-123',
+            userId: 'user-123',
+            roles: ['Student'],
+            tokenVersion: 1,
+            createdAt: 12345,
+            expiresAt: 67890,
+        };
+        const sessionService = {
+            createSessionWithAccessJti: vi.fn().mockResolvedValue(mockSession),
+        };
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+                tenantId: 'tenant-123',
+                branchId: 'branch-123',
+                tokenVersion: 1,
+            }),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService: sessionService as never,
+            authDao: authDao as never,
+        });
+
+        await authService.login({
+            identifier: 'test@example.com',
+            password: 'password',
+            rememberMe: true,
+        });
+
+        expect(sessionService.createSessionWithAccessJti).toHaveBeenCalledWith(
+            expect.objectContaining({
+                rememberMe: true,
+            })
+        );
+    });
 });

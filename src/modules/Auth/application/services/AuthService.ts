@@ -117,20 +117,23 @@ export class AuthService {
             tenantId: principal.tenantId,
             branchId: principal.branchId,
             tokenVersion: principal.tokenVersion,
-        }));
+        }, credentials.rememberMe));
     }
 
     public async unlockAccount(token: string): Promise<boolean> {
         return await this.dependencies.authDao.unlockAccountByToken(token);
     }
 
-    public async issueSession(principal: {
-        userId: string;
-        roles: readonly RoleName[];
-        tenantId?: string;
-        branchId?: string;
-        tokenVersion?: number;
-    }): Promise<AuthSessionBundle> {
+    public async issueSession(
+        principal: {
+            userId: string;
+            roles: readonly RoleName[];
+            tenantId?: string;
+            branchId?: string;
+            tokenVersion?: number;
+        },
+        rememberMe?: boolean
+    ): Promise<AuthSessionBundle> {
         const accessToken = this.dependencies.tokenService.issueAccessToken({
             subject: principal.userId,
             roles: principal.roles,
@@ -148,6 +151,7 @@ export class AuthService {
             branchId: principal.branchId,
             tokenVersion: principal.tokenVersion,
             accessTokenJti: claims.jti,
+            rememberMe,
         });
 
         return {

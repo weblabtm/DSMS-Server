@@ -7,6 +7,7 @@ export class AuthRequestMapper {
         return {
             identifier: String(payload.identifier ?? ''),
             password: String(payload.password ?? ''),
+            rememberMe: Boolean(payload.rememberMe),
             ...(payload.tenantId ? { tenantId: String(payload.tenantId) } : {}),
             ...(payload.branchId ? { branchId: String(payload.branchId) } : {}),
         };

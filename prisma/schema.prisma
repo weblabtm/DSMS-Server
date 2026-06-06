@@ -24,6 +24,7 @@ model AuthSession {
   expiresAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  rememberMe      Boolean  @default(false)
 
   @@index([userId])
   @@index([tenantId, branchId])
