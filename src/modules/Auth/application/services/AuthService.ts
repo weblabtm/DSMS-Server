@@ -11,6 +11,7 @@ import type { SessionRecord, CreateSessionInput, CreateSessionWithAccessJtiInput
 import { TokenService, type AccessTokenClaims } from './TokenService.js';
 import type { BruteForceProtectionService } from './BruteForceProtectionService.js';
 import type { ICaptchaValidator } from './ICaptchaValidator.js';
+import { type IMfaTransactionStore } from './IMfaTransactionStore.js';
 import crypto from 'crypto';
 
 export type AuthSessionBundle = {
@@ -39,6 +40,7 @@ export type AuthServiceDependencies = {
     emailService?: {
         queueEmail(to: string, subject: string, body: string, tenantId?: string, branchId?: string): Promise<any>;
     };
+    mfaTransactionStore?: IMfaTransactionStore;
 };
 
 export class AuthService {
@@ -104,6 +106,31 @@ export class AuthService {
             }
 
             throw new Error('Invalid credentials');
+        }
+
+        // Check if user requires OTP (MFA)
+        const user = await this.dependencies.authDao.findByIdentifier(credentials.identifier);
+        if (user && user.phoneNumber) {
+            const mfaStore = this.dependencies.mfaTransactionStore;
+            if (!mfaStore) {
+                throw new Error('MFA Transaction Store not configured');
+            }
+
+            if (credentials.mfaToken) {
+                const isVerified = await mfaStore.isVerified(credentials.mfaToken);
+                if (!isVerified) {
+                    throw new Error('MFA verification required');
+                }
+                // Cleanup transaction
+                await mfaStore.deleteTransaction(credentials.mfaToken);
+            } else {
+                // Generate a short-lived transaction token
+                const mfaToken = await mfaStore.createTransaction(principal.userId, credentials.rememberMe);
+                const otpError = new Error('OTP required');
+                (otpError as any).mfaToken = mfaToken;
+                (otpError as any).phoneNumber = user.phoneNumber;
+                throw otpError;
+            }
         }
 
         // 5. Success resets brute-force failure counters

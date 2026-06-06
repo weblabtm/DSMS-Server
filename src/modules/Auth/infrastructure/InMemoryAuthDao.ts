@@ -8,6 +8,7 @@ import { type AuthLoginRequestDto, type AuthPrincipalDto, type AuthRegisterReque
 type AuthSeed = AuthPrincipalDto & {
     identifier: string;
     password: string;
+    phoneNumber?: string;
     isLocked?: boolean;
     unlockToken?: string;
     unlockTokenExpiresAt?: Date;
@@ -21,6 +22,19 @@ export class InMemoryAuthDao implements AuthDao {
         for (const user of seedUsers) {
             this.usersByIdentifier.set(user.identifier, user);
         }
+    }
+
+    public async findByIdentifier(identifier: string): Promise<(AuthPrincipalDto & { phoneNumber?: string | null }) | null> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (!user) return null;
+        return {
+            userId: user.userId,
+            roles: user.roles,
+            tenantId: user.tenantId,
+            branchId: user.branchId,
+            tokenVersion: user.tokenVersion,
+            phoneNumber: user.phoneNumber || null,
+        };
     }
 
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {

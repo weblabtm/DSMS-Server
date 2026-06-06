@@ -12,6 +12,7 @@ export type AuthLoginRequestDto = {
     ipAddress?: string;
     captchaToken?: string;
     rememberMe?: boolean;
+    mfaToken?: string;
 };
 
 export type AuthRegisterRequestDto = {

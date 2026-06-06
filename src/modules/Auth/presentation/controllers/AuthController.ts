@@ -6,6 +6,7 @@ import type { Request, Response } from 'express';
 
 import { AuthService } from '../../application/services/AuthService.js';
 import { OtpService } from '../../application/services/OtpService.js';
+import { type IMfaTransactionStore } from '../../application/services/IMfaTransactionStore.js';
 import { type ICaptchaValidator } from '../../application/services/ICaptchaValidator.js';
 import { AuthRequestMapper } from '../mappers/AuthRequestMapper.js';
 import { AuthResponseMapper } from '../mappers/AuthResponseMapper.js';
@@ -15,7 +16,8 @@ export class AuthController {
     public constructor(
         private readonly authService: AuthService,
         private readonly otpService: OtpService,
-        private readonly googleCaptchaValidator: ICaptchaValidator
+        private readonly googleCaptchaValidator: ICaptchaValidator,
+        private readonly mfaTransactionStore: IMfaTransactionStore
     ) { }
 
     private setRefreshTokenCookie(response: Response, session: { refreshToken: string; rememberMe?: boolean }): void {
@@ -34,12 +36,12 @@ export class AuthController {
         });
     }
 
-    // POST /auth/login
     public async login(request: Request, response: Response): Promise<void> {
         try {
             const dto = AuthRequestMapper.toLoginRequestDto(request.body);
             dto.ipAddress = request.ip || request.socket?.remoteAddress;
             dto.captchaToken = (request.body as any)?.captchaToken;
+            dto.mfaToken = (request.body as any)?.mfaToken;
             
             const hostTenantSlug = resolveTenantSlug(request.headers);
             if (hostTenantSlug) {
@@ -52,6 +54,12 @@ export class AuthController {
             response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            if (message === 'OTP required') {
+                const phoneNumber = (error as any).phoneNumber || '';
+                const mfaToken = (error as any).mfaToken || '';
+                response.status(400).json({ message: 'OTP required', mfaToken, phoneNumber });
+                return;
+            }
             let status = 400;
             if (message.includes('Invalid credentials')) {
                 status = 401;
@@ -225,7 +233,7 @@ export class AuthController {
     // POST /auth/otp/validate
     public async validateOtp(request: Request, response: Response): Promise<void> {
         try {
-            const { otp } = request.body;
+            const { otp, mfaToken } = request.body;
 
             // Extract token from cookie (checking both cookies object and raw header fallback)
             let token = (request as any).cookies?.otp_token;
@@ -259,9 +267,14 @@ export class AuthController {
             const isValid = await this.otpService.validateOtp(token, otp);
 
             // Clear the cookie immediately
-            response.clearCookie('otp_token');
+            if (typeof response.clearCookie === 'function') {
+                response.clearCookie('otp_token');
+            }
 
             if (isValid) {
+                if (mfaToken) {
+                    await this.mfaTransactionStore.markVerified(mfaToken);
+                }
                 response.status(200).json({ message: 'OTP verified successfully.' });
             } else {
                 response.status(400).json({ message: 'Invalid or expired OTP.' });

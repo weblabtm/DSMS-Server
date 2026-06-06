@@ -233,6 +233,14 @@ describe('AuthService', () => {
                 tokenVersion: 1,
             }),
             isAccountLocked: vi.fn().mockResolvedValue(false),
+            findByIdentifier: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+                tenantId: 'tenant-123',
+                branchId: 'branch-123',
+                tokenVersion: 1,
+                phoneNumber: null,
+            }),
         };
         const authService = new AuthService({
             tokenService,
@@ -251,5 +259,138 @@ describe('AuthService', () => {
                 rememberMe: true,
             })
         );
+    });
+
+    it('requires OTP verification if user has a phone number and has not verified OTP', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+            }),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+            findByIdentifier: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+                phoneNumber: '+94712345678',
+            }),
+        };
+        const mfaTransactionStore = {
+            createTransaction: vi.fn().mockResolvedValue('test-mfa-token'),
+            getTransaction: vi.fn(),
+            markVerified: vi.fn(),
+            isVerified: vi.fn().mockResolvedValue(false),
+            deleteTransaction: vi.fn(),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            mfaTransactionStore: mfaTransactionStore as never,
+        });
+
+        try {
+            await authService.login({
+                identifier: 'mfa@example.com',
+                password: 'password',
+            });
+            expect.fail('Should have thrown OTP required');
+        } catch (error) {
+            expect((error as any).message).toBe('OTP required');
+            expect((error as any).mfaToken).toBe('test-mfa-token');
+            expect((error as any).phoneNumber).toBe('+94712345678');
+        }
+        expect(mfaTransactionStore.createTransaction).toHaveBeenCalledWith('user-123', undefined);
+    });
+
+    it('proceeds with login if user provides a verified mfaToken', async () => {
+        const tokenService = new TokenService('test-secret');
+        const mockSession = {
+            sessionId: 'sess-123',
+            refreshToken: 'ref-123',
+            accessToken: 'acc-123',
+            userId: 'user-123',
+            roles: ['Student'],
+            tokenVersion: 1,
+            createdAt: 12345,
+            expiresAt: 67890,
+        };
+        const sessionService = {
+            createSessionWithAccessJti: vi.fn().mockResolvedValue(mockSession),
+        };
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+            }),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+            findByIdentifier: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+                phoneNumber: '+94712345678',
+            }),
+        };
+        const mfaTransactionStore = {
+            createTransaction: vi.fn(),
+            getTransaction: vi.fn(),
+            markVerified: vi.fn(),
+            isVerified: vi.fn().mockResolvedValue(true),
+            deleteTransaction: vi.fn().mockResolvedValue(undefined),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService: sessionService as never,
+            authDao: authDao as never,
+            mfaTransactionStore: mfaTransactionStore as never,
+        });
+
+        const session = await authService.login({
+            identifier: 'mfa@example.com',
+            password: 'password',
+            mfaToken: 'verified-token',
+        });
+
+        expect(session.userId).toBe('user-123');
+        expect(mfaTransactionStore.isVerified).toHaveBeenCalledWith('verified-token');
+        expect(mfaTransactionStore.deleteTransaction).toHaveBeenCalledWith('verified-token');
+    });
+
+    it('throws verification required if mfaToken is not verified', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+            }),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+            findByIdentifier: vi.fn().mockResolvedValue({
+                userId: 'user-123',
+                roles: ['Student'],
+                phoneNumber: '+94712345678',
+            }),
+        };
+        const mfaTransactionStore = {
+            createTransaction: vi.fn(),
+            getTransaction: vi.fn(),
+            markVerified: vi.fn(),
+            isVerified: vi.fn().mockResolvedValue(false),
+            deleteTransaction: vi.fn(),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            mfaTransactionStore: mfaTransactionStore as never,
+        });
+
+        await expect(authService.login({
+            identifier: 'mfa@example.com',
+            password: 'password',
+            mfaToken: 'unverified-token',
+        })).rejects.toThrow('MFA verification required');
+        
+        expect(mfaTransactionStore.isVerified).toHaveBeenCalledWith('unverified-token');
     });
 });

@@ -4,6 +4,7 @@ model AuthUser {
   id         String   @id @default(cuid())
   identifier String   @unique
   password   String
+  phoneNumber String?
   tenantId   String?
   branchId   String?
   roles      String[] @default([])

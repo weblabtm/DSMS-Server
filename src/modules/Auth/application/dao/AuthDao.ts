@@ -8,6 +8,8 @@ import { type AuthRegisterRequestDto } from '../dtos/AuthDtos.js';
 export interface AuthDao {
     authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null>;
 
+    findByIdentifier(identifier: string): Promise<(AuthPrincipalDto & { phoneNumber?: string | null }) | null>;
+
     register(account: AuthRegisterRequestDto): Promise<AuthPrincipalDto>;
 
     lockAccount(identifier: string, token: string, expiresAt: Date): Promise<void>;

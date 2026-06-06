@@ -17,7 +17,18 @@ export class OtpService {
     ) {}
 
     public async generateOtp(input: OtpGenerateInput): Promise<{ token: string; otp: string }> {
-        if (!input.email && !input.phoneNumber) {
+        let email = input.email;
+        let phoneNumber = input.phoneNumber;
+
+        // If email is provided but no phone number (or phone number is masked), look up the user's real phone number
+        if (email && (!phoneNumber || phoneNumber.includes('x') || phoneNumber.includes('X'))) {
+            const user = await this.authDao.findByIdentifier(email);
+            if (user && user.phoneNumber) {
+                phoneNumber = user.phoneNumber;
+            }
+        }
+
+        if (!email && !phoneNumber) {
             throw new Error('At least one recipient (email or phoneNumber) must be provided.');
         }
 
@@ -32,9 +43,9 @@ export class OtpService {
         await this.authDao.saveOtp({ token, otpHash, expiresAt });
 
         // Decoupled notification sending
-        if (input.email) {
+        if (email) {
             await this.notificationService.sendOtp(
-                input.email,
+                email,
                 otpVal,
                 'email',
                 input.tenantId,
@@ -42,9 +53,9 @@ export class OtpService {
             );
         }
 
-        if (input.phoneNumber) {
+        if (phoneNumber) {
             await this.notificationService.sendOtp(
-                input.phoneNumber,
+                phoneNumber,
                 otpVal,
                 'sms',
                 input.tenantId,

@@ -4,6 +4,7 @@ import { EnvironmentConfig } from './config/environment.js';
 import { AuthController } from './modules/Auth/presentation/controllers/AuthController.js';
 import { AuthService } from './modules/Auth/application/services/AuthService.js';
 import { SessionService } from './modules/Auth/application/services/SessionService.js';
+import { MfaTransactionStore } from './modules/Auth/application/services/MfaTransactionStore.js';
 import { PrismaSessionService } from './modules/Auth/infrastructure/PrismaSessionService.js';
 import { TokenService } from './modules/Auth/application/services/TokenService.js';
 import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
@@ -120,6 +121,9 @@ export class ServerApplication {
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret', redisConnection) : new SessionService();
         const permissionGuard = new PermissionGuard();
+        
+        const mfaTransactionStore = new MfaTransactionStore(redisConnection ? redisConnection.getClient() : null);
+
         const authService = new AuthService({
             tokenService,
             sessionService,
@@ -128,6 +132,7 @@ export class ServerApplication {
             bruteForceService: this.bruteForceService,
             captchaValidator,
             emailService,
+            mfaTransactionStore,
         });
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
         this.authorizationMiddleware = new AuthorizationMiddleware(permissionGuard);
@@ -234,7 +239,7 @@ export class ServerApplication {
         );
 
         const otpService = new OtpService(authDao, otpNotificationService);
-        this.authController = new AuthController(authService, otpService, googleCaptchaValidator);
+        this.authController = new AuthController(authService, otpService, googleCaptchaValidator, mfaTransactionStore);
 
         // Application-level scheduler for background tasks (e.g. OTP cleanup)
         const cronScheduler = new CronScheduler();

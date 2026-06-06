@@ -25,6 +25,22 @@ import bcrypt from 'bcryptjs';
 export class PrismaAuthDao implements AuthDao {
     public constructor(private readonly prisma: PrismaClient) { }
 
+    public async findByIdentifier(identifier: string): Promise<(AuthPrincipalDto & { phoneNumber?: string | null }) | null> {
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier },
+        });
+
+        if (!user) return null;
+
+        return {
+            userId: user.id,
+            roles: user.roles ?? ['Student'],
+            tenantId: user.tenantId ?? undefined,
+            branchId: user.branchId ?? undefined,
+            phoneNumber: user.phoneNumber ?? null,
+        };
+    }
+
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {
         // Look up the user globally by email since emails are globally unique.
         const user = await (this.prisma as any).authUser.findUnique({
