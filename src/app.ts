@@ -42,6 +42,7 @@ import { SmsRetryWorker } from './modules/Notification/application/workers/SmsRe
 // Email Notification Module Imports
 import { ConsoleEmailProvider } from './modules/Notification/infrastructure/email/ConsoleEmailProvider.js';
 import { SendGridEmailProvider } from './modules/Notification/infrastructure/email/SendGridEmailProvider.js';
+import { NodemailerEmailProvider } from './modules/Notification/infrastructure/email/NodemailerEmailProvider.js';
 import { EmailNotificationService } from './modules/Notification/application/services/EmailNotificationService.js';
 import { EmailRetryWorker } from './modules/Notification/application/workers/EmailRetryWorker.js';
 import { NotificationService } from './modules/Notification/application/services/NotificationService.js';
@@ -80,17 +81,35 @@ export class ServerApplication {
         this.allowedOrigins = new Set(environment.allowedOrigins);
 
         // Email Gateway Module (initialized early for dependency injection in AuthService)
-        const emailProvider = environment.emailProviderType === 'sendgrid'
-            ? new SendGridEmailProvider({
+        let emailProvider;
+        if (environment.defaultEmailService === 'sendgrid') {
+            emailProvider = new SendGridEmailProvider({
                 apiKey: environment.sendgridApiKey,
                 fromEmail: environment.sendgridFromEmail,
-                fromName: environment.sendgridFromName,
-              })
-            : new ConsoleEmailProvider();
+                fromName: environment.sendgridFromName || environment.defaultSenderName,
+            });
+        } else if (environment.defaultEmailService === 'nodemailer') {
+            emailProvider = new NodemailerEmailProvider({
+                host: environment.smtpHost,
+                port: environment.smtpPort,
+                secure: environment.smtpSecure,
+                auth: (environment.smtpUser && environment.smtpPass) ? {
+                    user: environment.smtpUser,
+                    pass: environment.smtpPass,
+                } : undefined,
+                fromEmail: environment.smtpFromEmail,
+                fromName: environment.smtpFromName || environment.defaultSenderName,
+            });
+        } else {
+            emailProvider = new ConsoleEmailProvider();
+        }
 
         const emailService = new EmailNotificationService(
             prismaClient as any,
-            emailProvider
+            emailProvider,
+            environment.enableEmail,
+            environment.defaultEmailService,
+            environment.defaultSenderName
         );
 
         const bruteForceStore = new RedisBruteForceStore(redisConnection);

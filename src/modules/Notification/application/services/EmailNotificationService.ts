@@ -4,8 +4,109 @@ import { EmailProvider } from '../../infrastructure/email/EmailProvider.js';
 export class EmailNotificationService {
     public constructor(
         private readonly prisma: PrismaClient,
-        private readonly provider: EmailProvider
+        private readonly provider: EmailProvider,
+        private readonly enableEmail = true,
+        private readonly defaultEmailService?: string,
+        private readonly defaultSenderName?: string
     ) {}
+
+    public wrapInHtmlTemplate(body: string, systemName?: string): string {
+        const brandName = systemName || this.defaultSenderName || 'WEBBLAB';
+        const formattedBody = body.includes('<') && body.includes('>') 
+            ? body 
+            : body.replace(/\n/g, '<br />');
+
+        return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${brandName} Notification</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f1f5f9;
+            overflow: hidden;
+        }
+        .header-gradient {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            padding: 32px 24px;
+            text-align: center;
+            border-bottom: 3px solid #06b6d4;
+        }
+        .brand-title {
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin: 0;
+            text-transform: uppercase;
+        }
+        .brand-subtitle {
+            color: #94a3b8;
+            font-size: 13px;
+            margin-top: 4px;
+            margin-bottom: 0;
+            letter-spacing: 0.05em;
+        }
+        .content {
+            padding: 40px 32px;
+            color: #334155;
+            line-height: 1.625;
+            font-size: 15px;
+        }
+        .footer {
+            text-align: center;
+            padding: 24px;
+            background-color: #f8fafc;
+            border-top: 1px solid #f1f5f9;
+        }
+        .footer-text {
+            color: #64748b;
+            font-size: 12px;
+            margin: 0 0 8px 0;
+        }
+        .footer-subtext {
+            color: #94a3b8;
+            font-size: 11px;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="header-gradient">
+                <h1 class="brand-title">${brandName}</h1>
+                <p class="brand-subtitle">SECURE NOTIFICATION ENGINE</p>
+            </div>
+            <div class="content">
+                ${formattedBody}
+            </div>
+            <div class="footer">
+                <p class="footer-text">This is an automated system notification from ${brandName}.</p>
+                <p class="footer-subtext">&copy; ${new Date().getFullYear()} ${brandName}. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
+    }
 
     public async queueEmail(
         to: string,
@@ -25,12 +126,33 @@ export class EmailNotificationService {
             throw new Error('Email body is required.');
         }
 
+        const wrappedBody = this.wrapInHtmlTemplate(body);
+
+        if (!this.enableEmail) {
+            console.log(`[EmailNotificationService] Email service is disabled (ENABLE_EMAIL=false). Skipping queueing/sending for ${to}.`);
+            const emailMessage = await this.prisma.emailMessage.create({
+                data: {
+                    to,
+                    subject,
+                    body: wrappedBody,
+                    status: 'SKIPPED',
+                    retryCount: 0,
+                    maxRetries,
+                    nextRetryAt: null,
+                    tenantId: tenantId ?? null,
+                    branchId: branchId ?? null,
+                    errorMessage: 'Email service is disabled by configuration (ENABLE_EMAIL=false)',
+                },
+            });
+            return emailMessage;
+        }
+
         // 1. Create a PENDING EmailMessage in DB
         const emailMessage = await this.prisma.emailMessage.create({
             data: {
                 to,
                 subject,
-                body,
+                body: wrappedBody,
                 status: 'PENDING',
                 retryCount: 0,
                 maxRetries,

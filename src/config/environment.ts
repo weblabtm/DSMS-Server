@@ -70,13 +70,29 @@ export class EnvironmentConfig {
 
     public readonly textLkApiToken: string;
 
-    public readonly emailProviderType: 'sendgrid' | 'console';
+    public readonly enableEmail: boolean;
+
+    public readonly defaultEmailService: 'sendgrid' | 'nodemailer' | 'console';
 
     public readonly sendgridApiKey: string;
 
     public readonly sendgridFromEmail: string;
 
     public readonly sendgridFromName: string;
+
+    public readonly smtpHost: string;
+
+    public readonly smtpPort: number;
+
+    public readonly smtpSecure: boolean;
+
+    public readonly smtpUser: string;
+
+    public readonly smtpPass: string;
+
+    public readonly smtpFromEmail: string;
+
+    public readonly smtpFromName: string;
 
     public readonly turnstileSecretKey: string;
 
@@ -119,11 +135,28 @@ export class EnvironmentConfig {
 
         this.textLkApiToken = env.TEXT_LK_API_TOKEN ?? '';
 
-        // Outbound Email & SendGrid Setup
-        this.emailProviderType = (env.EMAIL_PROVIDER_TYPE === 'sendgrid' ? 'sendgrid' : 'console') as 'sendgrid' | 'console';
+        // Outbound Email & SendGrid/Nodemailer Setup
+        this.enableEmail = parseBoolean(env.ENABLE_EMAIL, true);
+        const rawEmailProvider = (env.DEFAULT_EMAIL_SERVICE ?? env.EMAIL_PROVIDER_TYPE)?.toLowerCase();
+        if (rawEmailProvider === 'sendgrid') {
+            this.defaultEmailService = 'sendgrid';
+        } else if (rawEmailProvider === 'nodemailer') {
+            this.defaultEmailService = 'nodemailer';
+        } else {
+            this.defaultEmailService = 'console';
+        }
+
         this.sendgridApiKey = env.SENDGRID_API_KEY ?? '';
         this.sendgridFromEmail = env.SENDGRID_FROM_EMAIL ?? '';
         this.sendgridFromName = env.SENDGRID_FROM_NAME ?? 'DSMS';
+
+        this.smtpHost = env.SMTP_HOST ?? '';
+        this.smtpPort = parsePort(env.SMTP_PORT, 587);
+        this.smtpSecure = parseBoolean(env.SMTP_SECURE, false);
+        this.smtpUser = env.SMTP_USER ?? '';
+        this.smtpPass = env.SMTP_PASS ?? '';
+        this.smtpFromEmail = env.SMTP_FROM_EMAIL ?? '';
+        this.smtpFromName = env.SMTP_FROM_NAME ?? 'DSMS';
 
         // CAPTCHA Setup
         this.turnstileSecretKey = env.TURNSTILE_SECRET_KEY ?? '';
