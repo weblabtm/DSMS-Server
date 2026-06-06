@@ -18,6 +18,22 @@ export class AuthController {
         private readonly googleCaptchaValidator: ICaptchaValidator
     ) { }
 
+    private setRefreshTokenCookie(response: Response, session: { refreshToken: string; rememberMe?: boolean }): void {
+        if (typeof response.cookie !== 'function') {
+            return;
+        }
+        const isProd = process.env.NODE_ENV === 'production';
+        const maxAge = session.rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+        
+        response.cookie('refresh_token', session.refreshToken, {
+            httpOnly: true,
+            secure: isProd,
+            sameSite: 'lax',
+            maxAge,
+            path: '/auth'
+        });
+    }
+
     // POST /auth/login
     public async login(request: Request, response: Response): Promise<void> {
         try {
@@ -31,6 +47,7 @@ export class AuthController {
             }
 
             const session = await this.authService.login(dto);
+            this.setRefreshTokenCookie(response, session);
 
             response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
         } catch (error) {
@@ -82,6 +99,7 @@ export class AuthController {
 
         try {
             const session = await this.authService.register(dto, inviterRole);
+            this.setRefreshTokenCookie(response, session);
             response.status(201).json(AuthResponseMapper.toRegisterResponseDto(session));
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -99,8 +117,30 @@ export class AuthController {
     // POST /auth/refresh
     public async refresh(request: Request, response: Response): Promise<void> {
         try {
-            const dto = AuthRequestMapper.toRefreshRequestDto(request.body);
-            const session = await this.authService.refresh(dto);
+            let refreshToken = (request as any).cookies?.refresh_token;
+            if (!refreshToken) {
+                const cookieHeader = request.headers?.cookie;
+                if (cookieHeader) {
+                    const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                        const [name, val] = c.split('=').map(x => x.trim());
+                        if (name) acc[name] = val;
+                        return acc;
+                    }, {} as Record<string, string>);
+                    refreshToken = cookies['refresh_token'];
+                }
+            }
+
+            if (!refreshToken) {
+                refreshToken = request.body?.refreshToken;
+            }
+
+            if (!refreshToken) {
+                response.status(401).json({ message: 'Refresh token is missing.' });
+                return;
+            }
+
+            const session = await this.authService.refresh({ refreshToken });
+            this.setRefreshTokenCookie(response, session);
 
             response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
         } catch (error) {
@@ -111,8 +151,30 @@ export class AuthController {
 
     // POST /auth/logout
     public async logout(request: Request, response: Response): Promise<void> {
-        const dto = AuthRequestMapper.toLogoutRequestDto(request.body);
-        await this.authService.logout(dto as never);
+        let refreshToken = (request as any).cookies?.refresh_token;
+        if (!refreshToken) {
+            const cookieHeader = request.headers?.cookie;
+            if (cookieHeader) {
+                const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                    const [name, val] = c.split('=').map(x => x.trim());
+                    if (name) acc[name] = val;
+                    return acc;
+                }, {} as Record<string, string>);
+                refreshToken = cookies['refresh_token'];
+            }
+        }
+
+        if (!refreshToken) {
+            refreshToken = request.body?.refreshToken;
+        }
+
+        if (refreshToken) {
+            await this.authService.logout({ refreshToken });
+        }
+
+        if (typeof response.clearCookie === 'function') {
+            response.clearCookie('refresh_token', { path: '/auth' });
+        }
         response.status(204).send();
     }
 

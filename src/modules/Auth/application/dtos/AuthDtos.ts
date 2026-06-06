@@ -46,6 +46,7 @@ export type AuthSessionResponseDto = {
     roles: RoleName[];
     tenantId?: string;
     branchId?: string;
+    rememberMe?: boolean;
 };
 
 export type AuthLoginResponseDto = AuthSessionResponseDto;

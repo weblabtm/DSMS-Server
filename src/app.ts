@@ -419,6 +419,7 @@ export class ServerApplication {
 
             response.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
             response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            response.setHeader('Access-Control-Allow-Credentials', 'true');
 
             if (request.method === 'OPTIONS') {
                 response.sendStatus(204);

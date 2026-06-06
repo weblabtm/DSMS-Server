@@ -19,6 +19,7 @@ export type AuthSessionBundle = {
     accessToken: string;
     claims: AccessTokenClaims;
     accessContext: AccessContext;
+    rememberMe?: boolean;
 };
 
 export type AuthServiceDependencies = {
@@ -166,6 +167,7 @@ export class AuthService {
                 branchId: principal.branchId,
                 tokenVersion: session.tokenVersion,
             }),
+            rememberMe: session.rememberMe,
         };
     }
 
@@ -241,6 +243,7 @@ export class AuthService {
                 branchId: session.branchId,
                 tokenVersion: session.tokenVersion,
             }),
+            rememberMe: session.rememberMe,
         };
     }
 
@@ -272,6 +275,7 @@ export class AuthService {
             roles: bundle.accessContext.roles,
             ...(bundle.accessContext.tenantId ? { tenantId: bundle.accessContext.tenantId } : {}),
             ...(bundle.accessContext.branchId ? { branchId: bundle.accessContext.branchId } : {}),
+            ...(bundle.rememberMe !== undefined ? { rememberMe: bundle.rememberMe } : {}),
         };
     }
 }
