@@ -60,6 +60,10 @@ export class AuthController {
                 response.status(400).json({ message: 'OTP required', mfaToken, phoneNumber });
                 return;
             }
+            if (message === 'CAPTCHA required') {
+                response.status(400).json({ message: 'CAPTCHA required' });
+                return;
+            }
             let status = 400;
             if (message.includes('Invalid credentials')) {
                 status = 401;
@@ -81,16 +85,39 @@ export class AuthController {
             return;
         }
 
+        const frontendUrl = process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+        response.redirect(`${frontendUrl}/otp?action=unlock&token=${token}`);
+    }
+
+    // GET /auth/unlock/details
+    public async getUnlockDetails(request: Request, response: Response): Promise<void> {
+        const token = String(request.query.token || '');
+        if (!token) {
+            response.status(400).json({ message: 'Your activation link has expired or is invalid. Please contact the Driving School to reactivate your account.' });
+            return;
+        }
+
         try {
-            const success = await this.authService.unlockAccount(token);
-            if (success) {
-                response.status(200).json({ message: 'Account successfully unlocked. You can now log in.' });
-            } else {
-                response.status(400).json({ message: 'Invalid or expired unlock token.' });
+            const user = typeof this.authService.dependencies.authDao.getUserByUnlockToken === 'function'
+                ? await this.authService.dependencies.authDao.getUserByUnlockToken(token)
+                : null;
+
+            if (!user) {
+                response.status(400).json({ message: 'Your activation link has expired or is invalid. Please contact the Driving School to reactivate your account.' });
+                return;
             }
+
+            if (user.unlockTokenExpiresAt && user.unlockTokenExpiresAt.getTime() < Date.now()) {
+                response.status(400).json({ message: 'Your activation link has expired or is invalid. Please contact the Driving School to reactivate your account.' });
+                return;
+            }
+
+            response.status(200).json({
+                email: user.identifier,
+                phoneNumber: user.phoneNumber,
+            });
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            response.status(400).json({ message });
+            response.status(400).json({ message: 'Your activation link has expired or is invalid. Please contact the Driving School to reactivate your account.' });
         }
     }
 
@@ -233,7 +260,7 @@ export class AuthController {
     // POST /auth/otp/validate
     public async validateOtp(request: Request, response: Response): Promise<void> {
         try {
-            const { otp, mfaToken } = request.body;
+            const { otp, mfaToken, unlockToken } = request.body;
 
             // Extract token from cookie (checking both cookies object and raw header fallback)
             let token = (request as any).cookies?.otp_token;
@@ -274,6 +301,9 @@ export class AuthController {
             if (isValid) {
                 if (mfaToken) {
                     await this.mfaTransactionStore.markVerified(mfaToken);
+                }
+                if (unlockToken) {
+                    await this.authService.unlockAccount(unlockToken);
                 }
                 response.status(200).json({ message: 'OTP verified successfully.' });
             } else {

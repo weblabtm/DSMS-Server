@@ -125,6 +125,30 @@ describe('AuthService', () => {
         })).rejects.toThrow('Invalid CAPTCHA token');
     });
 
+    it('blocks login and throws CAPTCHA required if CAPTCHA token is missing', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn(),
+            register: vi.fn(),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+        };
+        const captchaValidator = {
+            validate: vi.fn().mockResolvedValue(false),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            captchaValidator,
+        });
+
+        await expect(authService.login({
+            identifier: 'test@example.com',
+            password: 'secret',
+        })).rejects.toThrow('CAPTCHA required');
+    });
+
     it('blocks login if IP is rate-limited/blocked', async () => {
         const tokenService = new TokenService('test-secret');
         const sessionService = new SessionService();
@@ -150,17 +174,31 @@ describe('AuthService', () => {
         })).rejects.toThrow('Too many login attempts. Please try again later.');
     });
 
-    it('locks account and sends email when failure threshold is reached', async () => {
+    it('locks account temporarily on first failure threshold, then permanently with email link on second threshold', async () => {
         const tokenService = new TokenService('test-secret');
         const sessionService = new SessionService();
         const authDao = {
             authenticate: vi.fn().mockResolvedValue(null),
             isAccountLocked: vi.fn().mockResolvedValue(false),
+            getUserLockStatus: vi.fn().mockResolvedValue({
+                isLocked: false,
+                lockedAt: null,
+                unlockToken: null,
+                unlockTokenExpiresAt: null,
+                lockoutCount: 0,
+                phoneNumber: null,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            }),
+            lockAccountTemporarily: vi.fn().mockResolvedValue(undefined),
+            incrementLockoutCount: vi.fn().mockResolvedValue(undefined),
+            lockAccountPermanently: vi.fn().mockResolvedValue(undefined),
             lockAccount: vi.fn().mockResolvedValue(undefined),
         };
         const bruteForceService = {
             isIpBlocked: vi.fn().mockResolvedValue(false),
-            registerFailure: vi.fn().mockResolvedValue({ ipBlocked: false, accountLocked: true }),
+            registerFailure: vi.fn().mockResolvedValue({ ipBlocked: false, accountLocked: true, accountFailures: 5 }),
         };
         const emailService = {
             queueEmail: vi.fn().mockResolvedValue(undefined),
@@ -173,14 +211,37 @@ describe('AuthService', () => {
             emailService: emailService as never,
         });
 
+        // 1. First lock (lockoutCount is 0, so temporary lockout is triggered)
         await expect(authService.login({
             identifier: 'target@example.com',
             password: 'wrong-password',
             ipAddress: '1.2.3.4',
-        })).rejects.toThrow('Invalid credentials');
+        })).rejects.toThrow('Your account has been locked. Try again in 15 minutes 0 seconds.');
 
         expect(bruteForceService.registerFailure).toHaveBeenCalledWith('1.2.3.4', 'target@example.com');
-        expect(authDao.lockAccount).toHaveBeenCalledWith('target@example.com', expect.any(String), expect.any(Date));
+        expect(authDao.lockAccountTemporarily).toHaveBeenCalledWith('target@example.com', expect.any(Date));
+        expect(authDao.incrementLockoutCount).toHaveBeenCalledWith('target@example.com');
+
+        // 2. Second lock (lockoutCount is >= 1, so permanent lockout with email is triggered)
+        authDao.getUserLockStatus.mockResolvedValue({
+            isLocked: false,
+            lockedAt: null,
+            unlockToken: null,
+            unlockTokenExpiresAt: null,
+            lockoutCount: 1,
+            phoneNumber: null,
+            reminder1hSent: false,
+            reminder30mSent: false,
+            reminder10mSent: false,
+        });
+
+        await expect(authService.login({
+            identifier: 'target@example.com',
+            password: 'wrong-password',
+            ipAddress: '1.2.3.4',
+        })).rejects.toThrow('Account is locked. Please check your email to unlock it.');
+
+        expect(authDao.lockAccountPermanently).toHaveBeenCalledWith('target@example.com', expect.any(String), expect.any(Date));
         expect(emailService.queueEmail).toHaveBeenCalledWith(
             'target@example.com',
             'Account Locked',
@@ -190,12 +251,91 @@ describe('AuthService', () => {
         );
     });
 
+    it('shows attempts left warning when consecutive failures reach 2 or more', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue(null),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+            getUserLockStatus: vi.fn().mockResolvedValue(null),
+        };
+        const bruteForceService = {
+            isIpBlocked: vi.fn().mockResolvedValue(false),
+            registerFailure: vi.fn().mockResolvedValue({ ipBlocked: false, accountLocked: false, accountFailures: 2 }),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            bruteForceService: bruteForceService as never,
+        });
+
+        await expect(authService.login({
+            identifier: 'target@example.com',
+            password: 'wrong-password',
+            ipAddress: '1.2.3.4',
+        })).rejects.toThrow('Invalid credentials. 3 attempts left.');
+    });
+
+    it('automatically unlocks account if temporary lockout duration has passed', async () => {
+        const tokenService = new TokenService('test-secret');
+        const sessionService = new SessionService();
+        const authDao = {
+            authenticate: vi.fn().mockResolvedValue({ userId: 'user-1', roles: ['Student'] }),
+            isAccountLocked: vi.fn().mockResolvedValue(false),
+            getUserLockStatus: vi.fn().mockResolvedValue({
+                isLocked: true,
+                lockedAt: new Date(Date.now() - 20 * 60 * 1000), // locked 20 mins ago
+                unlockToken: null, // temporary lockout
+                unlockTokenExpiresAt: new Date(Date.now() - 5 * 60 * 1000), // expired 5 mins ago
+                lockoutCount: 1,
+                phoneNumber: null,
+            }),
+            unlockAccountAutomatically: vi.fn().mockResolvedValue(undefined),
+            resetLockoutCount: vi.fn().mockResolvedValue(undefined),
+            findByIdentifier: vi.fn().mockResolvedValue({
+                userId: 'user-1',
+                roles: ['Student'],
+                phoneNumber: null,
+            }),
+        };
+        const bruteForceService = {
+            isIpBlocked: vi.fn().mockResolvedValue(false),
+            registerSuccess: vi.fn().mockResolvedValue(undefined),
+        };
+        const authService = new AuthService({
+            tokenService,
+            sessionService,
+            authDao: authDao as never,
+            bruteForceService: bruteForceService as never,
+        });
+
+        const session = await authService.login({
+            identifier: 'target@example.com',
+            password: 'correct-password',
+            ipAddress: '1.2.3.4',
+        });
+
+        expect(authDao.unlockAccountAutomatically).toHaveBeenCalledWith('target@example.com');
+        expect(bruteForceService.registerSuccess).toHaveBeenCalledWith('1.2.3.4', 'target@example.com');
+        expect(authDao.resetLockoutCount).toHaveBeenCalledWith('target@example.com');
+        expect(session.userId).toBe('user-1');
+    });
+
     it('blocks login if account is locked in database', async () => {
         const tokenService = new TokenService('test-secret');
         const sessionService = new SessionService();
         const authDao = {
             authenticate: vi.fn(),
             isAccountLocked: vi.fn().mockResolvedValue(true),
+            getUserLockStatus: vi.fn().mockResolvedValue({
+                isLocked: true,
+                lockedAt: new Date(),
+                unlockToken: 'some-token',
+                unlockTokenExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+                lockoutCount: 1,
+                phoneNumber: null,
+            }),
         };
         const authService = new AuthService({
             tokenService,

@@ -18,6 +18,24 @@ export interface AuthDao {
 
     isAccountLocked(identifier: string): Promise<boolean>;
 
+    getUserLockStatus(identifier: string): Promise<{ isLocked: boolean; lockedAt: Date | null; unlockToken: string | null; unlockTokenExpiresAt: Date | null; lockoutCount: number; phoneNumber: string | null; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean } | null>;
+
+    incrementLockoutCount(identifier: string): Promise<void>;
+
+    resetLockoutCount(identifier: string): Promise<void>;
+
+    lockAccountTemporarily(identifier: string, expiresAt: Date): Promise<void>;
+
+    lockAccountPermanently(identifier: string, token: string, expiresAt: Date): Promise<void>;
+
+    unlockAccountAutomatically(identifier: string): Promise<void>;
+
+    getUserByUnlockToken(token: string): Promise<{ id: string; identifier: string; phoneNumber: string | null; unlockTokenExpiresAt: Date | null } | null>;
+
+    findActiveLockedUsers(): Promise<Array<{ id: string; identifier: string; unlockToken: string; unlockTokenExpiresAt: Date; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean; tenantId?: string; branchId?: string }>>;
+
+    updateReminderSent(userId: string, field: 'reminder1hSent' | 'reminder30mSent' | 'reminder10mSent', value: boolean): Promise<void>;
+
     saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void>;
 
     findOtp(token: string): Promise<{ token: string; otpHash: string; expiresAt: Date } | null>;

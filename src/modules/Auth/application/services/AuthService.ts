@@ -55,9 +55,14 @@ export class AuthService {
 
         // 1. CAPTCHA validation
         if (captchaValidator) {
-            const isValidCaptcha = await captchaValidator.validate(credentials.captchaToken || '', credentials.ipAddress);
+            const token = credentials.captchaToken || '';
+            const isValidCaptcha = await captchaValidator.validate(token, credentials.ipAddress);
             if (!isValidCaptcha) {
-                throw new Error('Invalid CAPTCHA token');
+                if (!token) {
+                    throw new Error('CAPTCHA required');
+                } else {
+                    throw new Error('Invalid CAPTCHA token');
+                }
             }
         }
 
@@ -70,9 +75,41 @@ export class AuthService {
         }
 
         // 3. Database Account lockout check
-        const isLocked = await this.dependencies.authDao.isAccountLocked(credentials.identifier);
-        if (isLocked) {
-            throw new Error('Account is locked. Please check your email to unlock it.');
+        const lockStatus = typeof this.dependencies.authDao.getUserLockStatus === 'function'
+            ? await this.dependencies.authDao.getUserLockStatus(credentials.identifier)
+            : null;
+
+        if (lockStatus && lockStatus.isLocked) {
+            if (lockStatus.unlockToken === null) {
+                // Temporary lockout countdown validation and auto-unlock
+                if (lockStatus.unlockTokenExpiresAt) {
+                    const expiresAt = lockStatus.unlockTokenExpiresAt.getTime();
+                    const now = Date.now();
+                    if (now >= expiresAt) {
+                        // Expired, automatically unlock
+                        await this.dependencies.authDao.unlockAccountAutomatically(credentials.identifier);
+                        if (bruteForceService) {
+                            const ip = credentials.ipAddress || 'unknown';
+                            await bruteForceService.registerSuccess(ip, credentials.identifier);
+                        }
+                    } else {
+                        const diffMs = expiresAt - now;
+                        const minutes = Math.floor(diffMs / 60000);
+                        const seconds = Math.floor((diffMs % 60000) / 1000);
+                        throw new Error(`Your account has been locked. Try again in ${minutes} minutes ${seconds} seconds.`);
+                    }
+                } else {
+                    throw new Error('Your account has been locked.');
+                }
+            } else {
+                throw new Error('Account is locked. Please check your email to unlock it.');
+            }
+        } else {
+            // Fallback for compatibility
+            const isLocked = await this.dependencies.authDao.isAccountLocked(credentials.identifier);
+            if (isLocked) {
+                throw new Error('Account is locked. Please check your email to unlock it.');
+            }
         }
 
         // 4. Authenticate credentials
@@ -82,25 +119,50 @@ export class AuthService {
             // Register failed attempt
             if (bruteForceService) {
                 const ip = credentials.ipAddress || 'unknown';
-                const { accountLocked } = await bruteForceService.registerFailure(ip, credentials.identifier);
+                const { accountLocked, accountFailures } = await bruteForceService.registerFailure(ip, credentials.identifier);
 
                 if (accountLocked) {
-                    // Lock account persistently in database
-                    const token = crypto.randomBytes(32).toString('hex');
-                    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours expiration
-                    await this.dependencies.authDao.lockAccount(credentials.identifier, token, expiresAt);
+                    const currentLockoutCount = lockStatus ? lockStatus.lockoutCount : 0;
+                    if (currentLockoutCount === 0) {
+                        // First Lockout (Temporary, 15 minutes)
+                        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+                        if (typeof this.dependencies.authDao.lockAccountTemporarily === 'function') {
+                            await this.dependencies.authDao.lockAccountTemporarily(credentials.identifier, expiresAt);
+                            await this.dependencies.authDao.incrementLockoutCount(credentials.identifier);
+                        }
+                        throw new Error('Your account has been locked. Try again in 15 minutes 0 seconds.');
+                    } else {
+                        // Second Lockout (Permanent, generate unlock token)
+                        const token = crypto.randomBytes(32).toString('hex');
+                        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours expiration
+                        if (typeof this.dependencies.authDao.lockAccountPermanently === 'function') {
+                            await this.dependencies.authDao.lockAccountPermanently(credentials.identifier, token, expiresAt);
+                            await this.dependencies.authDao.incrementLockoutCount(credentials.identifier);
+                        } else {
+                            // Fallback
+                            await this.dependencies.authDao.lockAccount(credentials.identifier, token, expiresAt);
+                        }
 
-                    // Send unlock email
-                    if (emailService) {
-                        const baseUrl = process.env.SMS_CALLBACK_BASE_URL || 'http://localhost:3000';
-                        const unlockLink = `${baseUrl}/auth/unlock?token=${token}`;
-                        await emailService.queueEmail(
-                            credentials.identifier,
-                            'Account Locked',
-                            `Your account has been locked due to too many failed login attempts. Click here to unlock it: ${unlockLink}`,
-                            credentials.tenantId,
-                            credentials.branchId
-                        );
+                        // Send unlock email
+                        if (emailService) {
+                            const baseUrl = process.env.SMS_CALLBACK_BASE_URL || 'http://localhost:3000';
+                            const unlockLink = `${baseUrl}/auth/unlock?token=${token}`;
+                            await emailService.queueEmail(
+                                credentials.identifier,
+                                'Account Locked',
+                                `Your account has been locked due to too many failed login attempts. Click here to unlock it: ${unlockLink}`,
+                                credentials.tenantId,
+                                credentials.branchId
+                            );
+                        }
+
+                        throw new Error('Account is locked. Please check your email to unlock it.');
+                    }
+                } else {
+                    // Check warnings for 3 or fewer failed login attempts left (failures >= 2)
+                    if (accountFailures >= 2) {
+                        const attemptsLeft = 5 - accountFailures;
+                        throw new Error(`Invalid credentials. ${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'} left.`);
                     }
                 }
             }
@@ -137,6 +199,9 @@ export class AuthService {
         if (bruteForceService) {
             const ip = credentials.ipAddress || 'unknown';
             await bruteForceService.registerSuccess(ip, credentials.identifier);
+            if (typeof this.dependencies.authDao.resetLockoutCount === 'function') {
+                await this.dependencies.authDao.resetLockoutCount(credentials.identifier);
+            }
         }
 
         return this.toSessionResponse(await this.issueSession({
@@ -149,7 +214,17 @@ export class AuthService {
     }
 
     public async unlockAccount(token: string): Promise<boolean> {
-        return await this.dependencies.authDao.unlockAccountByToken(token);
+        const user = typeof this.dependencies.authDao.getUserByUnlockToken === 'function'
+            ? await this.dependencies.authDao.getUserByUnlockToken(token)
+            : null;
+
+        const unlocked = await this.dependencies.authDao.unlockAccountByToken(token);
+        if (unlocked && user) {
+            if (typeof this.dependencies.authDao.resetLockoutCount === 'function') {
+                await this.dependencies.authDao.resetLockoutCount(user.identifier);
+            }
+        }
+        return unlocked;
     }
 
     public async issueSession(

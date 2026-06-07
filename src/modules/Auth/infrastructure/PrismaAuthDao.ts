@@ -151,6 +151,136 @@ export class PrismaAuthDao implements AuthDao {
         return !!user?.isLocked;
     }
 
+    public async getUserLockStatus(identifier: string): Promise<{ isLocked: boolean; lockedAt: Date | null; unlockToken: string | null; unlockTokenExpiresAt: Date | null; lockoutCount: number; phoneNumber: string | null; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean } | null> {
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier },
+        });
+        if (!user) return null;
+        return {
+            isLocked: user.isLocked,
+            lockedAt: user.lockedAt,
+            unlockToken: user.unlockToken,
+            unlockTokenExpiresAt: user.unlockTokenExpiresAt,
+            lockoutCount: user.lockoutCount,
+            phoneNumber: user.phoneNumber,
+            reminder1hSent: user.reminder1hSent,
+            reminder30mSent: user.reminder30mSent,
+            reminder10mSent: user.reminder10mSent,
+        };
+    }
+
+    public async incrementLockoutCount(identifier: string): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                lockoutCount: {
+                    increment: 1,
+                },
+            },
+        });
+    }
+
+    public async resetLockoutCount(identifier: string): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                lockoutCount: 0,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            },
+        });
+    }
+
+    public async lockAccountTemporarily(identifier: string, expiresAt: Date): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: true,
+                lockedAt: new Date(),
+                unlockToken: null,
+                unlockTokenExpiresAt: expiresAt,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            },
+        });
+    }
+
+    public async lockAccountPermanently(identifier: string, token: string, expiresAt: Date): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: true,
+                lockedAt: new Date(),
+                unlockToken: token,
+                unlockTokenExpiresAt: expiresAt,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            },
+        });
+    }
+
+    public async unlockAccountAutomatically(identifier: string): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: false,
+                lockedAt: null,
+                unlockToken: null,
+                unlockTokenExpiresAt: null,
+            },
+        });
+    }
+
+    public async getUserByUnlockToken(token: string): Promise<{ id: string; identifier: string; phoneNumber: string | null; unlockTokenExpiresAt: Date | null } | null> {
+        const user = await (this.prisma as any).authUser.findFirst({
+            where: { unlockToken: token },
+        });
+        if (!user) return null;
+        return {
+            id: user.id,
+            identifier: user.identifier,
+            phoneNumber: user.phoneNumber,
+            unlockTokenExpiresAt: user.unlockTokenExpiresAt,
+        };
+    }
+
+    public async findActiveLockedUsers(): Promise<Array<{ id: string; identifier: string; unlockToken: string; unlockTokenExpiresAt: Date; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean; tenantId?: string; branchId?: string }>> {
+        const users = await (this.prisma as any).authUser.findMany({
+            where: {
+                isLocked: true,
+                unlockToken: {
+                    not: null,
+                },
+                unlockTokenExpiresAt: {
+                    gt: new Date(),
+                },
+            },
+        });
+        return users.map((u: any) => ({
+            id: u.id,
+            identifier: u.identifier,
+            unlockToken: u.unlockToken!,
+            unlockTokenExpiresAt: u.unlockTokenExpiresAt!,
+            reminder1hSent: u.reminder1hSent,
+            reminder30mSent: u.reminder30mSent,
+            reminder10mSent: u.reminder10mSent,
+            tenantId: u.tenantId || undefined,
+            branchId: u.branchId || undefined,
+        }));
+    }
+
+    public async updateReminderSent(userId: string, field: 'reminder1hSent' | 'reminder30mSent' | 'reminder10mSent', value: boolean): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { id: userId },
+            data: {
+                [field]: value,
+            },
+        });
+    }
+
     public async saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void> {
         await (this.prisma as any).otp.create({
             data: {

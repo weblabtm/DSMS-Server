@@ -29,6 +29,7 @@ import { OtpService } from './modules/Auth/application/services/OtpService.js';
 import { type IOtpNotificationService } from './modules/Auth/application/services/IOtpNotificationService.js';
 import { CronScheduler } from './shared/infrastructure/cron/CronScheduler.js';
 import { OtpCleanupCronJob } from './modules/Auth/application/services/OtpCleanupCronJob.js';
+import { UnlockReminderCronJob } from './modules/Auth/application/services/UnlockReminderCronJob.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
@@ -244,6 +245,7 @@ export class ServerApplication {
         // Application-level scheduler for background tasks (e.g. OTP cleanup)
         const cronScheduler = new CronScheduler();
         cronScheduler.register(new OtpCleanupCronJob(authDao));
+        cronScheduler.register(new UnlockReminderCronJob(authDao, emailService));
         this.app.locals.cronScheduler = cronScheduler;
 
         this.registerMiddleware();
@@ -478,6 +480,7 @@ export class ServerApplication {
         response.status(200).json({
             apiBaseUrl: `${request.protocol}://${request.get('host') ?? 'localhost'}`,
             hostname: request.hostname,
+            recaptchaSiteKey: process.env.GOOGLE_reCAPTCHA_SITE_KEY || '6LedABAtAAAAAOBhX3sS_v8h6g5e-eG4P-Z3t0oZ',
         });
     }
 

@@ -18,6 +18,9 @@ export const createAuthRouter = (
     // GET /auth/unlock
     router.get('/unlock', controller.unlock.bind(controller));
 
+    // GET /auth/unlock/details
+    router.get('/unlock/details', controller.getUnlockDetails.bind(controller));
+
     // POST /auth/refresh
     router.post('/refresh', controller.refresh.bind(controller));
 

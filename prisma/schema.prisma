@@ -47,6 +47,10 @@ model AuthUser {
   lockedAt             DateTime?
   unlockToken          String?   @unique
   unlockTokenExpiresAt DateTime?
+  lockoutCount         Int       @default(0)
+  reminder1hSent       Boolean   @default(false)
+  reminder30mSent      Boolean   @default(false)
+  reminder10mSent      Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

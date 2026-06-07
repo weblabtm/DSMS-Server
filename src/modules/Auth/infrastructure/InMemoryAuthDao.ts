@@ -10,8 +10,13 @@ type AuthSeed = AuthPrincipalDto & {
     password: string;
     phoneNumber?: string;
     isLocked?: boolean;
+    lockedAt?: Date;
     unlockToken?: string;
     unlockTokenExpiresAt?: Date;
+    lockoutCount?: number;
+    reminder1hSent?: boolean;
+    reminder30mSent?: boolean;
+    reminder10mSent?: boolean;
 };
 
 export class InMemoryAuthDao implements AuthDao {
@@ -83,8 +88,12 @@ export class InMemoryAuthDao implements AuthDao {
         const user = this.usersByIdentifier.get(identifier);
         if (user) {
             user.isLocked = true;
+            user.lockedAt = new Date();
             user.unlockToken = token;
             user.unlockTokenExpiresAt = expiresAt;
+            user.reminder1hSent = false;
+            user.reminder30mSent = false;
+            user.reminder10mSent = false;
         }
     }
 
@@ -96,8 +105,13 @@ export class InMemoryAuthDao implements AuthDao {
                     return false;
                 }
                 user.isLocked = false;
+                user.lockedAt = undefined;
                 user.unlockToken = undefined;
                 user.unlockTokenExpiresAt = undefined;
+                user.lockoutCount = 0;
+                user.reminder1hSent = false;
+                user.reminder30mSent = false;
+                user.reminder10mSent = false;
                 return true;
             }
         }
@@ -107,6 +121,119 @@ export class InMemoryAuthDao implements AuthDao {
     public async isAccountLocked(identifier: string): Promise<boolean> {
         const user = this.usersByIdentifier.get(identifier);
         return !!user?.isLocked;
+    }
+
+    public async getUserLockStatus(identifier: string): Promise<{ isLocked: boolean; lockedAt: Date | null; unlockToken: string | null; unlockTokenExpiresAt: Date | null; lockoutCount: number; phoneNumber: string | null; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean } | null> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (!user) return null;
+        return {
+            isLocked: !!user.isLocked,
+            lockedAt: user.lockedAt || null,
+            unlockToken: user.unlockToken || null,
+            unlockTokenExpiresAt: user.unlockTokenExpiresAt || null,
+            lockoutCount: user.lockoutCount || 0,
+            phoneNumber: user.phoneNumber || null,
+            reminder1hSent: !!user.reminder1hSent,
+            reminder30mSent: !!user.reminder30mSent,
+            reminder10mSent: !!user.reminder10mSent,
+        };
+    }
+
+    public async incrementLockoutCount(identifier: string): Promise<void> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (user) {
+            user.lockoutCount = (user.lockoutCount || 0) + 1;
+        }
+    }
+
+    public async resetLockoutCount(identifier: string): Promise<void> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (user) {
+            user.lockoutCount = 0;
+            user.reminder1hSent = false;
+            user.reminder30mSent = false;
+            user.reminder10mSent = false;
+        }
+    }
+
+    public async lockAccountTemporarily(identifier: string, expiresAt: Date): Promise<void> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (user) {
+            user.isLocked = true;
+            user.lockedAt = new Date();
+            user.unlockToken = undefined;
+            user.unlockTokenExpiresAt = expiresAt;
+            user.reminder1hSent = false;
+            user.reminder30mSent = false;
+            user.reminder10mSent = false;
+        }
+    }
+
+    public async lockAccountPermanently(identifier: string, token: string, expiresAt: Date): Promise<void> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (user) {
+            user.isLocked = true;
+            user.lockedAt = new Date();
+            user.unlockToken = token;
+            user.unlockTokenExpiresAt = expiresAt;
+            user.reminder1hSent = false;
+            user.reminder30mSent = false;
+            user.reminder10mSent = false;
+        }
+    }
+
+    public async unlockAccountAutomatically(identifier: string): Promise<void> {
+        const user = this.usersByIdentifier.get(identifier);
+        if (user) {
+            user.isLocked = false;
+            user.lockedAt = undefined;
+            user.unlockToken = undefined;
+            user.unlockTokenExpiresAt = undefined;
+        }
+    }
+
+    public async getUserByUnlockToken(token: string): Promise<{ id: string; identifier: string; phoneNumber: string | null; unlockTokenExpiresAt: Date | null } | null> {
+        for (const user of this.usersByIdentifier.values()) {
+            if (user.unlockToken === token) {
+                return {
+                    id: user.userId,
+                    identifier: user.identifier,
+                    phoneNumber: user.phoneNumber || null,
+                    unlockTokenExpiresAt: user.unlockTokenExpiresAt || null,
+                };
+            }
+        }
+        return null;
+    }
+
+    public async findActiveLockedUsers(): Promise<Array<{ id: string; identifier: string; unlockToken: string; unlockTokenExpiresAt: Date; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean; tenantId?: string; branchId?: string }>> {
+        const now = new Date();
+        const active: any[] = [];
+        for (const user of this.usersByIdentifier.values()) {
+            if (user.isLocked && user.unlockToken && user.unlockTokenExpiresAt && user.unlockTokenExpiresAt > now) {
+                active.push({
+                    id: user.userId,
+                    identifier: user.identifier,
+                    unlockToken: user.unlockToken,
+                    unlockTokenExpiresAt: user.unlockTokenExpiresAt,
+                    reminder1hSent: !!user.reminder1hSent,
+                    reminder30mSent: !!user.reminder30mSent,
+                    reminder10mSent: !!user.reminder10mSent,
+                    tenantId: user.tenantId,
+                    branchId: user.branchId,
+                });
+            }
+        }
+        return active;
+    }
+
+    public async updateReminderSent(userId: string, field: 'reminder1hSent' | 'reminder30mSent' | 'reminder10mSent', value: boolean): Promise<void> {
+        for (const user of this.usersByIdentifier.values()) {
+            if (user.userId === userId) {
+                user[field] = value;
+                break;
+            }
+        }
     }
 
     public async saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void> {

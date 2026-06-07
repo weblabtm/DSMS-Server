@@ -47,7 +47,7 @@ export class BruteForceProtectionService {
         return failCount >= this.maxFailedAttemptsPerIp;
     }
 
-    public async registerFailure(ip: string, identifier: string): Promise<{ ipBlocked: boolean; accountLocked: boolean }> {
+    public async registerFailure(ip: string, identifier: string): Promise<{ ipBlocked: boolean; accountLocked: boolean; accountFailures: number }> {
         const now = Date.now();
 
         // 1. Log and check IP failure
@@ -65,7 +65,7 @@ export class BruteForceProtectionService {
         const accountFailures = await this.store.getAttemptCount(accountKey, now - this.accountLockoutWindowSeconds * 1000);
         const accountLocked = accountFailures >= this.maxFailedAttemptsPerAccount;
 
-        return { ipBlocked, accountLocked };
+        return { ipBlocked, accountLocked, accountFailures };
     }
 
     public async register404(ip: string): Promise<boolean> {
