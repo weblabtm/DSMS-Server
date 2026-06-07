@@ -4,6 +4,7 @@ import { EnvironmentConfig } from './config/environment.js';
 import { AuthController } from './modules/Auth/presentation/controllers/AuthController.js';
 import { AuthService } from './modules/Auth/application/services/AuthService.js';
 import { SessionService } from './modules/Auth/application/services/SessionService.js';
+import { MfaTransactionStore } from './modules/Auth/application/services/MfaTransactionStore.js';
 import { PrismaSessionService } from './modules/Auth/infrastructure/PrismaSessionService.js';
 import { TokenService } from './modules/Auth/application/services/TokenService.js';
 import { InMemoryAuthDao } from './modules/Auth/infrastructure/InMemoryAuthDao.js';
@@ -23,11 +24,12 @@ import { RedisConnection } from './infrastructure/redis/redis-connection.js';
 import { BruteForceProtectionService } from './modules/Auth/application/services/BruteForceProtectionService.js';
 import { RedisBruteForceStore } from './modules/Auth/infrastructure/RedisBruteForceStore.js';
 import { TurnstileCaptchaValidator } from './modules/Auth/infrastructure/captcha/TurnstileCaptchaValidator.js';
-import { GoogleCaptchaValidator } from './modules/Auth/infrastructure/captcha/GoogleCaptchaValidator.js';
+import { CaptchaService } from './modules/Auth/application/services/CaptchaService.js';
 import { OtpService } from './modules/Auth/application/services/OtpService.js';
 import { type IOtpNotificationService } from './modules/Auth/application/services/IOtpNotificationService.js';
 import { CronScheduler } from './shared/infrastructure/cron/CronScheduler.js';
 import { OtpCleanupCronJob } from './modules/Auth/application/services/OtpCleanupCronJob.js';
+import { UnlockReminderCronJob } from './modules/Auth/application/services/UnlockReminderCronJob.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
@@ -120,6 +122,9 @@ export class ServerApplication {
         const tokenService = new TokenService(environment.authSecret ?? 'dev-secret');
         const sessionService = prismaClient ? new PrismaSessionService(prismaClient, environment.authSecret ?? 'dev-secret', redisConnection) : new SessionService();
         const permissionGuard = new PermissionGuard();
+        
+        const mfaTransactionStore = new MfaTransactionStore(redisConnection ? redisConnection.getClient() : null);
+
         const authService = new AuthService({
             tokenService,
             sessionService,
@@ -128,6 +133,7 @@ export class ServerApplication {
             bruteForceService: this.bruteForceService,
             captchaValidator,
             emailService,
+            mfaTransactionStore,
         });
         this.authenticationMiddleware = new AuthenticationMiddleware(tokenService);
         this.authorizationMiddleware = new AuthorizationMiddleware(permissionGuard);
@@ -228,17 +234,36 @@ export class ServerApplication {
             }
         };
 
-        const googleCaptchaValidator = new GoogleCaptchaValidator(
-            environment.recaptchaSecretKey,
+        const turnstileCaptchaValidator = new TurnstileCaptchaValidator(
+            environment.turnstileSecretKey,
             environment.disableCaptcha
         );
 
-        const otpService = new OtpService(authDao, otpNotificationService);
-        this.authController = new AuthController(authService, otpService, googleCaptchaValidator);
+        const captchaService = new CaptchaService(
+            turnstileCaptchaValidator,
+            redisConnection ? redisConnection.getClient() : null
+        );
+
+        const otpService = new OtpService(
+            authDao,
+            otpNotificationService,
+            redisConnection ? redisConnection.getClient() : null,
+            captchaService
+        );
+
+        this.authController = new AuthController(
+            authService,
+            otpService,
+            turnstileCaptchaValidator,
+            mfaTransactionStore,
+            captchaService,
+            redisConnection ? redisConnection.getClient() : null
+        );
 
         // Application-level scheduler for background tasks (e.g. OTP cleanup)
         const cronScheduler = new CronScheduler();
         cronScheduler.register(new OtpCleanupCronJob(authDao));
+        cronScheduler.register(new UnlockReminderCronJob(authDao, emailService));
         this.app.locals.cronScheduler = cronScheduler;
 
         this.registerMiddleware();
@@ -295,6 +320,11 @@ export class ServerApplication {
         return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
             const ip = request.ip || request.socket.remoteAddress || 'unknown';
             try {
+                if (process.env.DISABLE_OTP_RATE_LIMIT === 'true') {
+                    next();
+                    return;
+                }
+
                 const isBlocked = await bruteForceService.isIpBlocked(ip);
                 if (isBlocked) {
                     response.status(403).json({ message: 'Access denied. IP is temporarily blocked.' });
@@ -419,6 +449,7 @@ export class ServerApplication {
 
             response.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
             response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            response.setHeader('Access-Control-Allow-Credentials', 'true');
 
             if (request.method === 'OPTIONS') {
                 response.sendStatus(204);

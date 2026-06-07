@@ -1,0 +1,13 @@
+model Device {
+  id          String    @id @default(cuid())
+  deviceId    String
+  userId      String
+  model       String?
+  osVersion   String?
+  platform    String?
+  trustedAt   DateTime? // Set when user completes full MFA (Captcha + OTP). Trust tiers derived at runtime.
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, deviceId])
+}

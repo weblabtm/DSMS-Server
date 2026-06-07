@@ -3,6 +3,14 @@ export type TenantRecord = {
     name: string;
     slug?: string | null;
     isActive: boolean;
+    // Branding
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
+    faviconUrl?: string | null;
+    // Plan
+    planTier: string;
+    planExpiresAt?: Date | null;
     createdAt: Date;
     updatedAt: Date;
 };

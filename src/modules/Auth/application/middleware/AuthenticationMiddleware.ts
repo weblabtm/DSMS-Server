@@ -43,6 +43,7 @@ export class AuthenticationMiddleware {
                 tenantId: claims.tenantId,
                 branchId: claims.branchId,
                 tokenVersion: claims.tokenVersion,
+                accessTokenJti: claims.jti,
             });
             next();
         } catch {
@@ -81,6 +82,7 @@ export class AuthenticationMiddleware {
                 tenantId: claims.tenantId,
                 branchId: claims.branchId,
                 tokenVersion: claims.tokenVersion,
+                accessTokenJti: claims.jti,
             });
             next();
         } catch {

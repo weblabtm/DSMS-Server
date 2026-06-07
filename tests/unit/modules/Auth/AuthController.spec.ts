@@ -5,28 +5,47 @@ import { AuthController } from '../../../../src/modules/Auth/presentation/contro
 describe('AuthController', () => {
     it('maps login request and response DTOs through the service', async () => {
         const authService = {
-            register: vi.fn(),
-            login: vi.fn().mockResolvedValue({
-                sessionId: 'session-1',
-                refreshToken: 'refresh-1',
-                accessToken: 'access-1',
+            authenticateCredentials: vi.fn().mockResolvedValue({
                 userId: 'user-1',
                 roles: ['Tenant Admin'],
                 tenantId: 'tenant-1',
                 branchId: 'branch-1',
+                identifier: 'admin@example.com',
+                tokenVersion: 1
             }),
-            refresh: vi.fn(),
+            issueSession: vi.fn().mockResolvedValue({
+                sessionId: 'session-1',
+                refreshToken: 'refresh-1',
+                accessToken: 'access-1',
+                rememberMe: false,
+                accessContext: {
+                    userId: 'user-1',
+                    roles: ['Tenant Admin'],
+                    tenantId: 'tenant-1',
+                    branchId: 'branch-1',
+                },
+            }),
+            dependencies: {
+                authDao: {
+                    findByIdentifier: vi.fn().mockResolvedValue(null)
+                }
+            }
         };
 
-        const controller = new AuthController(authService as never, {} as never, {} as never);
+        const mockCaptchaValidator = {
+            validate: vi.fn().mockResolvedValue(true)
+        };
+        const controller = new AuthController(authService as never, {} as never, mockCaptchaValidator as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
+            cookie: vi.fn(),
+            clearCookie: vi.fn(),
         };
 
         await controller.login({ body: { identifier: 'admin@example.com', password: 'secret' } } as never, response as never);
 
-        expect(authService.login).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'admin@example.com', password: 'secret' }));
+        expect(authService.authenticateCredentials).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'admin@example.com', password: 'secret' }));
         expect(response.status).toHaveBeenCalledWith(200);
         expect(response.json).toHaveBeenCalledWith({
             sessionId: 'session-1',
@@ -41,9 +60,7 @@ describe('AuthController', () => {
 
     it('returns 401 for invalid login credentials', async () => {
         const authService = {
-            register: vi.fn(),
-            login: vi.fn().mockRejectedValue(new Error('Invalid credentials')),
-            refresh: vi.fn(),
+            authenticateCredentials: vi.fn().mockRejectedValue(new Error('Invalid credentials')),
         };
 
         const controller = new AuthController(authService as never, {} as never, {} as never);
@@ -143,10 +160,10 @@ describe('AuthController', () => {
 
     describe('OTP endpoints', () => {
         it('generateOtp: fails when CAPTCHA is invalid', async () => {
-            const googleCaptchaValidator = {
-                validate: vi.fn().mockResolvedValue(false),
+            const otpService = {
+                generateOtp: vi.fn().mockRejectedValue(new Error('Invalid or expired CAPTCHA token.')),
             };
-            const controller = new AuthController({} as never, {} as never, googleCaptchaValidator as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
@@ -157,23 +174,24 @@ describe('AuthController', () => {
                 response as never
             );
 
-            expect(googleCaptchaValidator.validate).toHaveBeenCalledWith('bad', '1.1.1.1');
+            expect(otpService.generateOtp).toHaveBeenCalledWith(expect.objectContaining({
+                captchaToken: 'bad',
+                ip: '1.1.1.1',
+            }));
             expect(response.status).toHaveBeenCalledWith(400);
-            expect(response.json).toHaveBeenCalledWith({ message: 'Invalid CAPTCHA token' });
+            expect(response.json).toHaveBeenCalledWith({ message: 'Invalid or expired CAPTCHA token.' });
         });
 
         it('generateOtp: generates OTP and sets cookie when CAPTCHA is valid', async () => {
-            const googleCaptchaValidator = {
-                validate: vi.fn().mockResolvedValue(true),
-            };
             const otpService = {
                 generateOtp: vi.fn().mockResolvedValue({ token: 'test-token', otp: '123456' }),
             };
-            const controller = new AuthController({} as never, otpService as never, googleCaptchaValidator as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
                 cookie: vi.fn(),
+                clearCookie: vi.fn(),
             };
 
             await controller.generateOtp(
@@ -181,13 +199,13 @@ describe('AuthController', () => {
                 response as never
             );
 
-            expect(otpService.generateOtp).toHaveBeenCalledWith({
+            expect(otpService.generateOtp).toHaveBeenCalledWith(expect.objectContaining({
                 email: 't@e.com',
-                phoneNumber: undefined,
-                tenantId: undefined,
-                branchId: undefined,
-            });
+                captchaToken: 'good',
+                ip: '1.1.1.1',
+            }));
             expect(response.cookie).toHaveBeenCalledWith('otp_token', 'test-token', expect.any(Object));
+            expect(response.clearCookie).toHaveBeenCalledWith('captcha_verified_token');
             expect(response.status).toHaveBeenCalledWith(200);
             expect(response.json).toHaveBeenCalledWith({
                 message: 'OTP generated successfully.',
@@ -197,13 +215,14 @@ describe('AuthController', () => {
 
         it('validateOtp: validates OTP successfully and clears cookie', async () => {
             const otpService = {
-                validateOtp: vi.fn().mockResolvedValue(true),
+                validateOtpAndStore: vi.fn().mockResolvedValue('test-verified-token'),
             };
             const controller = new AuthController({} as never, otpService as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
                 clearCookie: vi.fn(),
+                cookie: vi.fn(),
             };
 
             await controller.validateOtp(
@@ -211,10 +230,11 @@ describe('AuthController', () => {
                 response as never
             );
 
-            expect(otpService.validateOtp).toHaveBeenCalledWith('test-token', '123456');
+            expect(otpService.validateOtpAndStore).toHaveBeenCalledWith('test-token', '123456', '', '', '', '', '');
             expect(response.clearCookie).toHaveBeenCalledWith('otp_token');
+            expect(response.cookie).toHaveBeenCalledWith('otp_verified_token', 'test-verified-token', expect.any(Object));
             expect(response.status).toHaveBeenCalledWith(200);
-            expect(response.json).toHaveBeenCalledWith({ message: 'OTP verified successfully.' });
+            expect(response.json).toHaveBeenCalledWith({ message: 'OTP verified successfully.', token: 'test-verified-token' });
         });
 
         it('validateOtp: returns error if OTP token is missing', async () => {
@@ -231,6 +251,69 @@ describe('AuthController', () => {
 
             expect(response.status).toHaveBeenCalledWith(400);
             expect(response.json).toHaveBeenCalledWith({ message: 'OTP token is missing.' });
+        });
+    });
+
+    describe('completeLogin tests', () => {
+        it('bypasses CAPTCHA check when loginState has captchaVerified = true', async () => {
+            const authService = {
+                issueSession: vi.fn().mockResolvedValue({
+                    sessionId: 'session-1',
+                    refreshToken: 'refresh-1',
+                    accessToken: 'access-1',
+                    rememberMe: false,
+                    accessContext: {
+                        userId: 'user-1',
+                        roles: ['Tenant Admin'],
+                        tenantId: 'tenant-1',
+                        branchId: 'branch-1',
+                    },
+                }),
+                dependencies: {
+                    authDao: {
+                        findByIdentifier: vi.fn().mockResolvedValue({
+                            id: 'user-1',
+                            identifier: 'admin@example.com',
+                            phoneNumber: null
+                        })
+                    }
+                }
+            };
+
+            const mockCaptchaValidator = {
+                validate: vi.fn().mockResolvedValue(false)
+            };
+
+            const controller = new AuthController(authService as never, {} as never, mockCaptchaValidator as never);
+
+            (controller as any).loginStateMemoryStore.set('test-login-state-token', {
+                userId: 'user-1',
+                identifier: 'admin@example.com',
+                roles: ['Tenant Admin'],
+                tenantId: 'tenant-1',
+                branchId: 'branch-1',
+                tokenVersion: 1,
+                captchaVerified: true,
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000)
+            });
+
+            const response = {
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
+                cookie: vi.fn(),
+                clearCookie: vi.fn(),
+            };
+
+            await controller.completeLogin(
+                { cookies: { login_state_token: 'test-login-state-token' }, headers: {} } as never,
+                response as never
+            );
+
+            expect(response.status).toHaveBeenCalledWith(200);
+            expect(mockCaptchaValidator.validate).not.toHaveBeenCalled();
+            expect(response.json).toHaveBeenCalledWith(expect.objectContaining({
+                sessionId: 'session-1'
+            }));
         });
     });
 });

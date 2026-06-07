@@ -11,6 +11,10 @@ model AuthSession {
   expiresAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  rememberMe      Boolean  @default(false)
+  deviceFingerprint String?
+  deviceOs          String?
+  devicePlatform    String?
 
   @@index([userId])
   @@index([tenantId, branchId])

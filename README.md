@@ -9,6 +9,11 @@ Driving School Management System server codebase
 - [Redis infrastructure](src/infrastructure/redis/README.md)
 - [Storage infrastructure](src/infrastructure/storage/README.md)
 
+## Developer Guides
+
+- [Auth Module Overview](src/modules/Auth/README.md)
+- [OTP & MFA Transaction Architecture Guide](src/modules/Auth/docs/otp-guide.md)
+
 ## Local development
 
 1. The repo includes a local `.env` and a matching `.env.example` for PostgreSQL, Redis, MinIO, `PORT`, and `ALLOWED_ORIGINS`.
