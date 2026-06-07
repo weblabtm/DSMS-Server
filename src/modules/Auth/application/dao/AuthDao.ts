@@ -51,4 +51,18 @@ export interface AuthDao {
         osVersion?: string;
         platform?: string;
     }): Promise<void>;
+
+    /**
+     * Returns the trust level for a device fingerprint belonging to the given user.
+     *  - 'full'    → trustedAt < 15 days ago  → skip Captcha + OTP
+     *  - 'partial' → trustedAt 15–30 days ago → skip OTP only, require Captcha
+     *  - 'none'    → no trust record or trust expired (>30 days)
+     */
+    getDeviceTrustStatus(userId: string, deviceFingerprint: string): Promise<'full' | 'partial' | 'none'>;
+
+    /**
+     * Marks a device as trusted now. Uses the deviceFingerprint as the deviceId.
+     * Upserts the Device row and stamps trustedAt = now().
+     */
+    trustDevice(userId: string, deviceFingerprint: string): Promise<void>;
 }

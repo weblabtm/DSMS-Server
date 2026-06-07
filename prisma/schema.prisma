@@ -63,14 +63,15 @@ model AuthUser {
 
 // ===== src\modules\Auth\prisma\Device.prisma =====
 model Device {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   deviceId    String
   userId      String
   model       String?
   osVersion   String?
   platform    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  trustedAt   DateTime? // Stamped after successful full MFA (Captcha + OTP). Drives trust tier logic.
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([userId, deviceId])
 }

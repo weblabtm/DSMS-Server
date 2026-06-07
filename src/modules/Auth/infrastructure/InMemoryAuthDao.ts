@@ -261,7 +261,7 @@ export class InMemoryAuthDao implements AuthDao {
         return count;
     }
 
-    private readonly devices: Array<{ deviceId: string; userId: string; model?: string; osVersion?: string; platform?: string }> = [];
+    private readonly devices: Array<{ deviceId: string; userId: string; model?: string; osVersion?: string; platform?: string; trustedAt?: Date }> = [];
 
     public async syncDevice(device: {
         deviceId: string;
@@ -277,6 +277,30 @@ export class InMemoryAuthDao implements AuthDao {
             existing.platform = device.platform;
         } else {
             this.devices.push({ ...device });
+        }
+    }
+
+    public async getDeviceTrustStatus(userId: string, deviceFingerprint: string): Promise<'full' | 'partial' | 'none'> {
+        if (!deviceFingerprint) return 'none';
+        const record = this.devices.find(d => d.userId === userId && d.deviceId === deviceFingerprint);
+        if (!record || !record.trustedAt) return 'none';
+
+        const ageMs = Date.now() - record.trustedAt.getTime();
+        const FULL_TRUST_MS = 15 * 24 * 60 * 60 * 1000;
+        const MAX_TRUST_MS  = 30 * 24 * 60 * 60 * 1000;
+
+        if (ageMs > MAX_TRUST_MS) return 'none';
+        if (ageMs > FULL_TRUST_MS) return 'partial';
+        return 'full';
+    }
+
+    public async trustDevice(userId: string, deviceFingerprint: string): Promise<void> {
+        if (!deviceFingerprint) return;
+        const existing = this.devices.find(d => d.userId === userId && d.deviceId === deviceFingerprint);
+        if (existing) {
+            existing.trustedAt = new Date();
+        } else {
+            this.devices.push({ deviceId: deviceFingerprint, userId, trustedAt: new Date() });
         }
     }
 }

@@ -88,7 +88,47 @@ export class AuthController {
             // 1. Authenticate user's credentials
             const principal = await this.authService.authenticateCredentials(dto);
 
-            // 2. Check if captcha was already verified via cookie (Login page re-submission after /challenge)
+            // 2. Check trusted device status — determines how much of the MFA flow to skip
+            //    'full'    (0–15 days)  → skip Captcha + OTP, issue session immediately
+            //    'partial' (15–30 days) → skip OTP only, still require Captcha
+            //    'none'                 → full flow (Captcha + OTP)
+            const deviceFingerprint = dto.deviceFingerprint || '';
+            let deviceTrust: 'full' | 'partial' | 'none' = 'none';
+            if (deviceFingerprint && principal.userId) {
+                deviceTrust = await this.authService.dependencies.authDao.getDeviceTrustStatus(
+                    principal.userId,
+                    deviceFingerprint
+                );
+            }
+
+            if (deviceTrust === 'full') {
+                // Fully trusted device: issue session with no Captcha or OTP
+                const session = await this.authService.issueSession({
+                    userId: principal.userId,
+                    roles: principal.roles,
+                    tenantId: principal.tenantId,
+                    branchId: principal.branchId,
+                    tokenVersion: principal.tokenVersion,
+                    deviceFingerprint: dto.deviceFingerprint,
+                    deviceOs: dto.deviceOs,
+                    devicePlatform: dto.devicePlatform,
+                }, dto.rememberMe);
+
+                this.setRefreshTokenCookie(response, session);
+                response.status(200).json(AuthResponseMapper.toLoginResponseDto({
+                    sessionId: session.sessionId,
+                    refreshToken: session.refreshToken,
+                    accessToken: session.accessToken,
+                    userId: session.accessContext.userId,
+                    roles: session.accessContext.roles,
+                    tenantId: session.accessContext.tenantId,
+                    branchId: session.accessContext.branchId,
+                    rememberMe: session.rememberMe,
+                }));
+                return;
+            }
+
+            // 3. Check if captcha was already verified via cookie (Login page re-submission after /challenge)
             let captchaAlreadyVerified = false;
             let captchaVerifiedToken = (request as any).cookies?.captcha_verified_token as string | undefined;
             if (this.captchaService) {
@@ -108,14 +148,14 @@ export class AuthController {
                 }
             }
 
-            // 3. Determine next verification steps
+            // 4. Determine next verification steps
             let needsCaptcha = false;
             if (!captchaAlreadyVerified && this.captchaValidator) {
                 const isBypassed = await this.captchaValidator.validate('', dto.ipAddress);
                 needsCaptcha = !isBypassed;
             }
 
-            // 4. Generate short-lived master login state token
+            // 5. Generate short-lived master login state token
             const loginStateToken = crypto.randomUUID();
             const loginStateData = {
                 userId: principal.userId,
@@ -129,7 +169,9 @@ export class AuthController {
                 captchaToken: captchaAlreadyVerified ? captchaVerifiedToken : undefined,
                 deviceFingerprint: dto.deviceFingerprint,
                 deviceOs: dto.deviceOs,
-                devicePlatform: dto.devicePlatform
+                devicePlatform: dto.devicePlatform,
+                // partial trust: OTP is not required even though device is not fully trusted
+                otpSkipped: deviceTrust === 'partial',
             };
             await this.saveLoginState(loginStateToken, loginStateData);
 
@@ -147,19 +189,20 @@ export class AuthController {
                 return;
             }
 
-            // Check if OTP is required
-            const user = await this.authService.dependencies.authDao.findByIdentifier(dto.identifier);
-            if (user && user.phoneNumber) {
-                response.status(401).json({
-                    message: 'OTP required',
-                    phoneNumber: user.phoneNumber,
-                    email: dto.identifier
-                });
-                return;
+            // 6. Check if OTP is required — skip for partially trusted devices
+            if (deviceTrust !== 'partial') {
+                const user = await this.authService.dependencies.authDao.findByIdentifier(dto.identifier);
+                if (user && user.phoneNumber) {
+                    response.status(401).json({
+                        message: 'OTP required',
+                        phoneNumber: user.phoneNumber,
+                        email: dto.identifier
+                    });
+                    return;
+                }
             }
 
-
-            // If neither is required, finalize session immediately
+            // If neither is required (no phone or partial trust after captcha), finalize session immediately
             const session = await this.authService.issueSession({
                 userId: principal.userId,
                 roles: principal.roles,
@@ -700,9 +743,10 @@ export class AuthController {
                 }
             }
 
-            // 3. Check OTP if required
+            // 3. Check OTP if required — skipped for partially trusted devices
+            //    (loginState.otpSkipped is set in login() when deviceTrust === 'partial')
             const user = await this.authService.dependencies.authDao.findByIdentifier(loginState.identifier);
-            const needsOtp = user && !!user.phoneNumber;
+            const needsOtp = user && !!user.phoneNumber && !loginState.otpSkipped;
 
             if (needsOtp) {
                 let otpVerifiedToken = (request as any).cookies?.otp_verified_token;
@@ -746,6 +790,16 @@ export class AuthController {
                 deviceOs: loginState.deviceOs,
                 devicePlatform: loginState.devicePlatform,
             }, loginState.rememberMe);
+
+            // 5. Mark the device as trusted (full 30-day trust window refreshed).
+            //    This only runs when the user completed the full MFA challenge (Captcha + OTP),
+            //    so the device earns fresh trust starting now.
+            if (loginState.deviceFingerprint && loginState.userId) {
+                await this.authService.dependencies.authDao.trustDevice(
+                    loginState.userId,
+                    loginState.deviceFingerprint
+                );
+            }
 
             // Cleanup
             await this.deleteLoginState(loginStateToken);
