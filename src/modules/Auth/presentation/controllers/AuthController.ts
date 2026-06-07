@@ -212,6 +212,20 @@ export class AuthController {
         }
 
         const frontendUrl = process.env.CLIENT_BASE_URL || 'http://localhost:5173';
+        try {
+            const user = typeof this.authService.dependencies.authDao.getUserByUnlockToken === 'function'
+                ? await this.authService.dependencies.authDao.getUserByUnlockToken(token)
+                : null;
+            if (user) {
+                const email = user.identifier || '';
+                const phone = user.phoneNumber || '';
+                response.redirect(`${frontendUrl}/otp?action=unlock&token=${token}&email=${encodeURIComponent(email)}&phone=${encodeURIComponent(phone)}`);
+                return;
+            }
+        } catch (error) {
+            // Fallback to minimal redirect on error
+        }
+
         response.redirect(`${frontendUrl}/otp?action=unlock&token=${token}`);
     }
 
