@@ -1,89 +1,107 @@
 # OTP Generation and Validation Guide
 
-This document describes the design, implementation, endpoints, and CLI testing flows for the DSMS One-Time Password (OTP) verification system.
+This document describes the design, implementation, endpoints, and testing flows for the DSMS One-Time Password (OTP) verification and Multi-Factor Authentication (MFA) transaction system.
 
 ---
 
-## Architecture & Flow
+## Architecture & Flow (Pattern A - Short-Lived MFA Token)
 
-The OTP module is decoupled from the notification module via an interface (`IOtpNotificationService`). This prevents the Auth module from depending directly on Twilio, Text.lk, or other providers.
+To protect credentials and prevent brute-force or session fixation attacks, DSMS utilizes a short-lived **MFA Transaction Token** stored in **Redis** with an automatic TTL of 5 minutes.
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant AuthController
-    participant OtpService
-    participant AuthDao (DB/Memory)
-    participant IOtpNotificationService
-
-    Client->>AuthController: POST /auth/otp/generate { email, phoneNumber }
-    Note over AuthController: Validate reCAPTCHA & Enforce Rate Limits
-    AuthController->>OtpService: generateOtp(input)
-    OtpService->>OtpService: Generate secure 6-digit random code
-    OtpService->>OtpService: Bcrypt hash the code
-    OtpService->>AuthDao: saveOtp({ token, otpHash, expiresAt })
-    OtpService->>IOtpNotificationService: sendOtp(...)
-    IOtpNotificationService-->>Client: Email/SMS notification dispatched
-    OtpService-->>AuthController: return { token, otp }
-    Note over AuthController: Set "otp_token" HTTP-Only cookie
-    AuthController-->>Client: Return 200 OK { token }
-
-    Client->>AuthController: POST /auth/otp/validate { otp }
-    Note over AuthController: Read cookie or token fallback
-    AuthController->>OtpService: validateOtp(token, otp)
-    OtpService->>AuthDao: findOtp(token)
-    OtpService->>OtpService: Bcrypt compare input code with hash
-    Note over OtpService: Delete OTP immediately (one-time try)
-    OtpService->>AuthDao: deleteOtp(token)
-    OtpService-->>AuthController: return true/false
-    Note over AuthController: Clear "otp_token" cookie
-    AuthController-->>Client: Return 200 OK / 400 Bad Request
+```
+       Client                  Server (Auth Controller)          MfaTransactionStore (Redis)
+         |                                |                                  |
+         |----- 1. POST /auth/login ----->|                                  |
+         |      (email, password)         |-- Check credentials              |
+         |                                |-- User has phone (needs OTP)     |
+         |                                |                                  |
+         |                                |--- 2. createTransaction() ------>| (Save userId & rememberMe)
+         |<-- 3. Return 400 OTP Required -|                                  | (Expires in 5 minutes)
+         |    (mfaToken, maskedPhone)     |                                  |
+         |                                |                                  |
+         |----- 4. POST /otp/generate --->|                                  |
+         |      (email, mfaToken)         |-- Lookup user's raw phone        |
+         |                                |-- Send SMS / Console log         |
+         |                                |                                  |
+         |----- 5. POST /otp/validate --->|                                  |
+         |      (otp, mfaToken)           |--- 6. markVerified(mfaToken) --->| (Mark verified: true)
+         |<---- 200 OK (Verified) --------|                                  |
+         |                                |                                  |
+         |----- 7. POST /auth/login ----->|                                  |
+         |      (email, password,         |-- Validate credentials           |
+         |       mfaToken)                |--- 8. isVerified(mfaToken) ----->| (Check verification state)
+         |                                |--- 9. deleteTransaction() ------>| (Destroy transaction)
+         |<---- 200 OK (Session Issued) --|                                  |
 ```
 
-### Key Security Decisions:
-1. **One-Way Hashing**: OTP values are hashed using `bcrypt` before database storage. They are never saved in plaintext.
-2. **Immediate Destruction on Attempt**: To prevent brute forcing, the OTP database record is deleted immediately on the first verification attempt, whether successful or failed. If validation fails, a new OTP must be generated.
-3. **Hardened Rate Limiting**: The generation endpoint `/auth/otp/generate` is protected by a rate limiter of **5 requests per 10 minutes** per IP.
-4. **reCAPTCHA Check**: Requires a valid Google reCAPTCHA token for generation, bypassable in local development by setting `DISABLE_CAPTCHA=true` in `.env`.
+### Key Security Decisions
+1. **No Client Password Caching**: Plaintext user passwords are submitted, verified, and immediately discarded by the client. The client never stores credentials in persistent cookies or LocalStorage.
+2. **In-Memory Cache (Redis)**: Transient validation states and verification codes are kept exclusively in Redis with standard 5-minute TTL expirations. Active transaction codes are never saved to the SQL database, preventing database index bloat and leak risk.
+3. **One-Time Destruction**: The MFA transaction is deleted from Redis immediately upon a successful login completion, preventing replay attacks.
+4. **Rate Limiting & CAPTCHA**: `/auth/otp/generate` is protected by a rate limiter allowing a maximum of **5 requests per 10 minutes** per IP and google reCAPTCHA verification.
 
 ---
 
 ## HTTP API Endpoints
 
-### 1. Generate OTP
+### 1. Login Authentication
+* **URL**: `/auth/login`
+* **Method**: `POST`
+* **Body**:
+  ```json
+  {
+    "identifier": "user@email.com",
+    "password": "mySecurePassword",
+    "rememberMe": true,
+    "mfaToken": "d748f219-c09a-4c28-971a-68a865f375a0"
+  }
+  ```
+  *(mfaToken is omitted on the first login request)*
+* **Responses**:
+  - **MFA Required (400 Bad Request)**:
+    ```json
+    {
+      "message": "OTP required",
+      "mfaToken": "d748f219-c09a-4c28-971a-68a865f375a0",
+      "phoneNumber": "+94xxxxxxx678"
+    }
+    ```
+  - **Login Complete (200 OK)**:
+    Returns the standard `AuthSessionResponse` with JWT token payload and sets the secure session cookie.
+
+### 2. Generate OTP
 * **URL**: `/auth/otp/generate`
 * **Method**: `POST`
 * **Body**:
   ```json
   {
     "email": "user@email.com",
-    "phoneNumber": "+94771234567",
+    "phoneNumber": "+94xxxxxxx678",
     "captchaToken": "g-recaptcha-response-token"
   }
   ```
-  *(At least one recipient—email or phoneNumber—must be provided)*
+  *(The server will look up the real phone number by email if the phoneNumber passed is masked or empty)*
 * **Response**: Sets `otp_token` cookie and returns:
   ```json
   {
-    "token": "d748f219-c09a-4c28-971a-68a865f375a0"
+    "token": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
   }
   ```
 
-### 2. Validate OTP
+### 3. Validate OTP
 * **URL**: `/auth/otp/validate`
 * **Method**: `POST`
 * **Body**:
   ```json
   {
     "otp": "123456",
-    "token": "d748f219-c09a-4c28-971a-68a865f375a0" 
+    "mfaToken": "d748f219-c09a-4c28-971a-68a865f375a0"
   }
   ```
-  *(The `token` body field is a fallback if cookies are blocked/unsupported)*
-* **Response**: Clears `otp_token` cookie and returns:
+* **Response**: Marks `mfaToken` as verified in Redis, clears the `otp_token` cookie, and returns:
   ```json
   {
-    "message": "OTP validated successfully."
+    "message": "OTP verified successfully."
   }
   ```
 
@@ -91,21 +109,12 @@ sequenceDiagram
 
 ## Local Testing with the CLI Script
 
-We have provided a CLI testing script to automate testing the OTP flow locally.
-
-### Prerequisites:
-1. Server is running locally: `npm run dev`
-2. Google reCAPTCHA is bypassed locally: `DISABLE_CAPTCHA=true` is set in your `.env`.
-
-### Run the Script:
-You can run the script and specify the recipient details as flags:
+You can test the generation and verification flows locally using the custom CLI script:
 ```bash
-npx tsx scripts/test-otp.ts --email "user@email.com" --phone "+94771234567"
+npx tsx scripts/test-otp.ts --email "superadmin@email.com"
 ```
 Or run it interactively:
 ```bash
 npx tsx scripts/test-otp.ts
 ```
-
-### Validation Failure / Regenerating Loop:
-Because the database record is deleted immediately on verification attempts (successful or failed), **you cannot retry validation on the same OTP code**. If validation fails, the script will automatically generate a new OTP and prompt you to input the new one.
+To test MFA login flows, use Postman, curl, or standard web browser interactions on the local frontend application (`http://localhost:5173`).

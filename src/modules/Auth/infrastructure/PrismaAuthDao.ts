@@ -25,6 +25,22 @@ import bcrypt from 'bcryptjs';
 export class PrismaAuthDao implements AuthDao {
     public constructor(private readonly prisma: PrismaClient) { }
 
+    public async findByIdentifier(identifier: string): Promise<(AuthPrincipalDto & { phoneNumber?: string | null }) | null> {
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier },
+        });
+
+        if (!user) return null;
+
+        return {
+            userId: user.id,
+            roles: user.roles ?? ['Student'],
+            tenantId: user.tenantId ?? undefined,
+            branchId: user.branchId ?? undefined,
+            phoneNumber: user.phoneNumber ?? null,
+        };
+    }
+
     public async authenticate(credentials: AuthLoginRequestDto): Promise<AuthPrincipalDto | null> {
         // Look up the user globally by email since emails are globally unique.
         const user = await (this.prisma as any).authUser.findUnique({
@@ -135,6 +151,136 @@ export class PrismaAuthDao implements AuthDao {
         return !!user?.isLocked;
     }
 
+    public async getUserLockStatus(identifier: string): Promise<{ isLocked: boolean; lockedAt: Date | null; unlockToken: string | null; unlockTokenExpiresAt: Date | null; lockoutCount: number; phoneNumber: string | null; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean } | null> {
+        const user = await (this.prisma as any).authUser.findUnique({
+            where: { identifier },
+        });
+        if (!user) return null;
+        return {
+            isLocked: user.isLocked,
+            lockedAt: user.lockedAt,
+            unlockToken: user.unlockToken,
+            unlockTokenExpiresAt: user.unlockTokenExpiresAt,
+            lockoutCount: user.lockoutCount,
+            phoneNumber: user.phoneNumber,
+            reminder1hSent: user.reminder1hSent,
+            reminder30mSent: user.reminder30mSent,
+            reminder10mSent: user.reminder10mSent,
+        };
+    }
+
+    public async incrementLockoutCount(identifier: string): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                lockoutCount: {
+                    increment: 1,
+                },
+            },
+        });
+    }
+
+    public async resetLockoutCount(identifier: string): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                lockoutCount: 0,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            },
+        });
+    }
+
+    public async lockAccountTemporarily(identifier: string, expiresAt: Date): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: true,
+                lockedAt: new Date(),
+                unlockToken: null,
+                unlockTokenExpiresAt: expiresAt,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            },
+        });
+    }
+
+    public async lockAccountPermanently(identifier: string, token: string, expiresAt: Date): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: true,
+                lockedAt: new Date(),
+                unlockToken: token,
+                unlockTokenExpiresAt: expiresAt,
+                reminder1hSent: false,
+                reminder30mSent: false,
+                reminder10mSent: false,
+            },
+        });
+    }
+
+    public async unlockAccountAutomatically(identifier: string): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { identifier },
+            data: {
+                isLocked: false,
+                lockedAt: null,
+                unlockToken: null,
+                unlockTokenExpiresAt: null,
+            },
+        });
+    }
+
+    public async getUserByUnlockToken(token: string): Promise<{ id: string; identifier: string; phoneNumber: string | null; unlockTokenExpiresAt: Date | null } | null> {
+        const user = await (this.prisma as any).authUser.findFirst({
+            where: { unlockToken: token },
+        });
+        if (!user) return null;
+        return {
+            id: user.id,
+            identifier: user.identifier,
+            phoneNumber: user.phoneNumber,
+            unlockTokenExpiresAt: user.unlockTokenExpiresAt,
+        };
+    }
+
+    public async findActiveLockedUsers(): Promise<Array<{ id: string; identifier: string; unlockToken: string; unlockTokenExpiresAt: Date; reminder1hSent: boolean; reminder30mSent: boolean; reminder10mSent: boolean; tenantId?: string; branchId?: string }>> {
+        const users = await (this.prisma as any).authUser.findMany({
+            where: {
+                isLocked: true,
+                unlockToken: {
+                    not: null,
+                },
+                unlockTokenExpiresAt: {
+                    gt: new Date(),
+                },
+            },
+        });
+        return users.map((u: any) => ({
+            id: u.id,
+            identifier: u.identifier,
+            unlockToken: u.unlockToken!,
+            unlockTokenExpiresAt: u.unlockTokenExpiresAt!,
+            reminder1hSent: u.reminder1hSent,
+            reminder30mSent: u.reminder30mSent,
+            reminder10mSent: u.reminder10mSent,
+            tenantId: u.tenantId || undefined,
+            branchId: u.branchId || undefined,
+        }));
+    }
+
+    public async updateReminderSent(userId: string, field: 'reminder1hSent' | 'reminder30mSent' | 'reminder10mSent', value: boolean): Promise<void> {
+        await (this.prisma as any).authUser.update({
+            where: { id: userId },
+            data: {
+                [field]: value,
+            },
+        });
+    }
+
     public async saveOtp(otp: { token: string; otpHash: string; expiresAt: Date }): Promise<void> {
         await (this.prisma as any).otp.create({
             data: {
@@ -172,5 +318,77 @@ export class PrismaAuthDao implements AuthDao {
             },
         });
         return result.count;
+    }
+
+    public async syncDevice(device: {
+        deviceId: string;
+        userId: string;
+        model?: string;
+        osVersion?: string;
+        platform?: string;
+    }): Promise<void> {
+        await (this.prisma as any).device.upsert({
+            where: {
+                userId_deviceId: {
+                    userId: device.userId,
+                    deviceId: device.deviceId,
+                },
+            },
+            update: {
+                model: device.model,
+                osVersion: device.osVersion,
+                platform: device.platform,
+            },
+            create: {
+                deviceId: device.deviceId,
+                userId: device.userId,
+                model: device.model,
+                osVersion: device.osVersion,
+                platform: device.platform,
+            },
+        });
+    }
+
+    public async getDeviceTrustStatus(userId: string, deviceFingerprint: string): Promise<'full' | 'partial' | 'none'> {
+        if (!deviceFingerprint) return 'none';
+
+        const record = await (this.prisma as any).device.findUnique({
+            where: {
+                userId_deviceId: {
+                    userId,
+                    deviceId: deviceFingerprint,
+                },
+            },
+            select: { trustedAt: true },
+        });
+
+        if (!record || !record.trustedAt) return 'none';
+
+        const ageMs = Date.now() - new Date(record.trustedAt).getTime();
+        const FULL_TRUST_MS = 15 * 24 * 60 * 60 * 1000;  // 15 days
+        const MAX_TRUST_MS  = 30 * 24 * 60 * 60 * 1000;  // 30 days
+
+        if (ageMs > MAX_TRUST_MS) return 'none';
+        if (ageMs > FULL_TRUST_MS) return 'partial';
+        return 'full';
+    }
+
+    public async trustDevice(userId: string, deviceFingerprint: string): Promise<void> {
+        if (!deviceFingerprint) return;
+
+        await (this.prisma as any).device.upsert({
+            where: {
+                userId_deviceId: {
+                    userId,
+                    deviceId: deviceFingerprint,
+                },
+            },
+            update: { trustedAt: new Date() },
+            create: {
+                deviceId: deviceFingerprint,
+                userId,
+                trustedAt: new Date(),
+            },
+        });
     }
 }

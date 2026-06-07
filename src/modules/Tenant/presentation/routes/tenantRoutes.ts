@@ -23,5 +23,11 @@ export const createTenantRouter = (controller: TenantController, auth: Authoriza
     // PATCH /tenant/:id - update (name or isActive)
     router.patch('/:id', auth.require('tenant.manage'), controller.update.bind(controller));
 
+    // PATCH /tenant/:id/branding - update branding (Super Admin or own Tenant Admin)
+    router.patch('/:id/branding', auth.require('tenant.manage'), controller.updateBranding.bind(controller));
+
+    // PATCH /tenant/:id/plan - update plan tier (Super Admin only, enforced in controller)
+    router.patch('/:id/plan', auth.require('tenant.manage'), controller.updatePlan.bind(controller));
+
     return router;
 };

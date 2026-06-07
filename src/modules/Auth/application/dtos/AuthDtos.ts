@@ -11,6 +11,14 @@ export type AuthLoginRequestDto = {
     branchId?: string;
     ipAddress?: string;
     captchaToken?: string;
+    rememberMe?: boolean;
+    mfaToken?: string;
+    deviceId?: string;
+    deviceModel?: string;
+    deviceOsVersion?: string;
+    devicePlatform?: string;
+    deviceFingerprint?: string;
+    deviceOs?: string;
 };
 
 export type AuthRegisterRequestDto = {
@@ -45,6 +53,7 @@ export type AuthSessionResponseDto = {
     roles: RoleName[];
     tenantId?: string;
     branchId?: string;
+    rememberMe?: boolean;
 };
 
 export type AuthLoginResponseDto = AuthSessionResponseDto;

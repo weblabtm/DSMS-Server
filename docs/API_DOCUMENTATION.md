@@ -188,9 +188,11 @@ Authenticates a user and starts a session.
     "password": "StrongPassword123!",
     "tenantId": "acme",
     "branchId": "branch-01",
-    "captchaToken": "optional-recaptcha-v2-or-v3-token"
+    "captchaToken": "optional-recaptcha-v2-or-v3-token",
+    "mfaToken": "optional-mfa-transaction-token-guid"
   }
   ```
+  *(Note: `mfaToken` is omitted on the first login attempt. If the user has a registered phone number, this request will return a `400 Bad Request` with an `OTP required` message, `mfaToken`, and `phoneNumber` to be used for OTP verification).*
 * **Response `200 OK`**:
   ```json
   {
@@ -205,8 +207,18 @@ Authenticates a user and starts a session.
     }
   }
   ```
+* **Response `400 Bad Request` (OTP Required)**:
+  Returned when the credentials are correct but the user has a registered phone number and needs to perform OTP verification first.
+  ```json
+  {
+    "message": "OTP required",
+    "mfaToken": "d748f219-c09a-4c28-971a-68a865f375a0",
+    "phoneNumber": "+94xxxxxxx678"
+  }
+  ```
+* **Response `400 Bad Request`**: Missing required parameters or invalid formatting.
 * **Response `401 Unauthorized`**: Invalid username/identifier or password.
-* **Response `403 Forbidden`**: Account is locked due to too many failed attempts.
+* **Response `403 Forbidden`**: Account is locked due to too many failed attempts, or the provided MFA token is unverified.
 * **Response `429 Too Many Requests`**: IP is rate-limited.
 
 ---
@@ -312,10 +324,11 @@ Validates the 6-digit OTP code against the transaction token.
   ```json
   {
     "otp": "123456",
-    "token": "otp_transaction_token_string"
+    "token": "otp_transaction_token_string",
+    "mfaToken": "optional_mfa_transaction_token_guid"
   }
   ```
-  *(Note: `token` is optional in the request body and serves as a fallback if the HttpOnly `otp_token` cookie is missing).*
+  *(Note: `token` is optional in the request body and serves as a fallback if the HttpOnly `otp_token` cookie is missing. `mfaToken` is also optional; if provided and the OTP validates successfully, the associated MFA transaction is marked as verified in the store, allowing the user to complete login).*
 * **Response `200 OK`**:
   * Clears the `otp_token` cookie immediately.
   ```json

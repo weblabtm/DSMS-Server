@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import type { TenantService } from '../../application/services/TenantService.js';
-import type { CreateTenantRequestDto, UpdateTenantRequestDto } from '../../application/dtos/TenantDtos.js';
+import type { CreateTenantRequestDto, UpdateTenantRequestDto, UpdateTenantBrandingRequestDto, UpdateTenantPlanRequestDto } from '../../application/dtos/TenantDtos.js';
 import { ForbiddenError } from '../../../../shared/errors/ForbiddenError.js';
 
 export class TenantController {
@@ -141,6 +141,67 @@ export class TenantController {
             response.status(200).json(updated);
         } catch (error) {
             response.status(404).json({ message: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    // PATCH /tenant/:id/branding - update branding (Super Admin or own Tenant Admin)
+    public async updateBranding(request: Request, response: Response): Promise<void> {
+        const id = String(request.params.id);
+        const body = request.body as UpdateTenantBrandingRequestDto;
+        const authContext = request.authContext;
+
+        if (!authContext) {
+            response.status(401).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        if (!authContext.isSuperAdmin()) {
+            const existing = await this.tenantService.getTenant(id);
+            const isSelfTenantAdmin = authContext.hasRole('Tenant Admin')
+                && existing !== null
+                && (authContext.tenantId === existing.id || authContext.tenantId === existing.slug);
+
+            if (!isSelfTenantAdmin) {
+                throw new ForbiddenError('Only Super Admin or the Tenant Admin of this tenant can update branding');
+            }
+        }
+
+        try {
+            const updated = await this.tenantService.updateBranding(id, body ?? {});
+            response.status(200).json(updated);
+        } catch (error) {
+            response.status(400).json({ message: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    // PATCH /tenant/:id/plan - update plan tier (Super Admin only)
+    public async updatePlan(request: Request, response: Response): Promise<void> {
+        const id = String(request.params.id);
+        const body = request.body as UpdateTenantPlanRequestDto;
+        const authContext = request.authContext;
+
+        if (!authContext) {
+            response.status(401).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        if (!authContext.isSuperAdmin()) {
+            throw new ForbiddenError('Only Super Admin can update the plan tier');
+        }
+
+        if (!body?.planTier) {
+            response.status(400).json({ message: 'Missing required field: planTier' });
+            return;
+        }
+
+        try {
+            const updated = await this.tenantService.updatePlan(id, {
+                planTier: String(body.planTier),
+                planExpiresAt: body.planExpiresAt ?? null,
+            });
+            response.status(200).json(updated);
+        } catch (error) {
+            response.status(400).json({ message: error instanceof Error ? error.message : String(error) });
         }
     }
 }

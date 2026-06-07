@@ -7,8 +7,15 @@ export class AuthRequestMapper {
         return {
             identifier: String(payload.identifier ?? ''),
             password: String(payload.password ?? ''),
+            rememberMe: Boolean(payload.rememberMe),
             ...(payload.tenantId ? { tenantId: String(payload.tenantId) } : {}),
             ...(payload.branchId ? { branchId: String(payload.branchId) } : {}),
+            ...(payload.deviceId ? { deviceId: String(payload.deviceId) } : {}),
+            ...(payload.deviceModel ? { deviceModel: String(payload.deviceModel) } : {}),
+            ...(payload.deviceOsVersion ? { deviceOsVersion: String(payload.deviceOsVersion) } : {}),
+            ...(payload.devicePlatform ? { devicePlatform: String(payload.devicePlatform) } : {}),
+            ...(payload.deviceFingerprint ? { deviceFingerprint: String(payload.deviceFingerprint) } : {}),
+            ...(payload.deviceOs ? { deviceOs: String(payload.deviceOs) } : {}),
         };
     }
 

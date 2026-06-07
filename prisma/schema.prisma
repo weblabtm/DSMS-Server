@@ -24,6 +24,10 @@ model AuthSession {
   expiresAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  rememberMe      Boolean  @default(false)
+  deviceFingerprint String?
+  deviceOs          String?
+  devicePlatform    String?
 
   @@index([userId])
   @@index([tenantId, branchId])
@@ -38,6 +42,7 @@ model AuthUser {
   id         String   @id @default(cuid())
   identifier String   @unique
   password   String
+  phoneNumber String?
   tenantId   String?
   branchId   String?
   roles      String[] @default([])
@@ -45,10 +50,30 @@ model AuthUser {
   lockedAt             DateTime?
   unlockToken          String?   @unique
   unlockTokenExpiresAt DateTime?
+  lockoutCount         Int       @default(0)
+  reminder1hSent       Boolean   @default(false)
+  reminder30mSent      Boolean   @default(false)
+  reminder10mSent      Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   @@index([tenantId, branchId])
+}
+
+
+// ===== src\modules\Auth\prisma\Device.prisma =====
+model Device {
+  id          String    @id @default(cuid())
+  deviceId    String
+  userId      String
+  model       String?
+  osVersion   String?
+  platform    String?
+  trustedAt   DateTime? // Stamped after successful full MFA (Captcha + OTP). Drives trust tier logic.
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, deviceId])
 }
 
 
@@ -183,10 +208,29 @@ model SmsMessage {
 
 // ===== src\modules\Tenant\prisma\Tenant.prisma =====
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String?  @unique
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  slug            String?   @unique
+  isActive        Boolean   @default(true)
+
+  // Branding
+  logoUrl         String?
+  primaryColor    String?
+  secondaryColor  String?
+  faviconUrl      String?
+
+  // Plan
+  planTier        PlanTier  @default(BASIC)
+  planExpiresAt   DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+
+// ===== src\modules\Tenant\prisma\enums.prisma =====
+enum PlanTier {
+  BASIC
+  STANDARD
+  PREMIUM
 }
