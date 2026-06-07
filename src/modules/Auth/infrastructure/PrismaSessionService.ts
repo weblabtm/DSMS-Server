@@ -359,6 +359,7 @@ export class PrismaSessionService {
             expiresAt: Math.floor(s.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(s.updatedAt.getTime() / 1000),
             rememberMe: s.rememberMe,
+            accessTokenJti: s.accessTokenJti ?? undefined,
             deviceFingerprint: s.deviceFingerprint ?? undefined,
             deviceOs: s.deviceOs ?? undefined,
             devicePlatform: s.devicePlatform ?? undefined,

@@ -671,13 +671,27 @@ export class AuthController {
                 return;
             }
 
+            const currentJti = request.authContext?.accessTokenJti;
             const sessions = await sessionService.getActiveSessionsForUser(userId);
-            response.status(200).json({ sessions });
+
+            const mappedSessions = sessions.map((s: any) => ({
+                sessionId: s.sessionId,
+                deviceFingerprint: s.deviceFingerprint ?? null,
+                deviceOs: s.deviceOs ?? null,
+                devicePlatform: s.devicePlatform ?? null,
+                createdAt: s.createdAt,
+                expiresAt: s.expiresAt,
+                rememberMe: s.rememberMe,
+                isCurrent: currentJti && s.accessTokenJti ? s.accessTokenJti === currentJti : false,
+            }));
+
+            response.status(200).json({ sessions: mappedSessions });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             response.status(500).json({ message });
         }
     }
+
 
     // DELETE /auth/sessions/:sessionId
     public async revokeSession(request: Request, response: Response): Promise<void> {
