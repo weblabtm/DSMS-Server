@@ -69,7 +69,7 @@ export class AuthController {
         response.cookie('refresh_token', session.refreshToken, {
             httpOnly: true,
             secure: isProd,
-            sameSite: 'lax',
+            sameSite: isProd ? 'none' : 'lax',
             maxAge,
             path: '/auth'
         });
@@ -175,7 +175,7 @@ export class AuthController {
             response.cookie('login_state_token', loginStateToken, {
                 httpOnly: true,
                 secure: isProd,
-                sameSite: 'lax',
+                sameSite: isProd ? 'none' : 'lax',
                 maxAge: 5 * 60 * 1000
             });
 
@@ -211,7 +211,10 @@ export class AuthController {
 
             // Clean up temporary login state
             await this.deleteLoginState(loginStateToken);
-            response.clearCookie('login_state_token');
+            response.clearCookie('login_state_token', {
+                secure: isProd,
+                sameSite: isProd ? 'none' : 'lax'
+            });
 
             this.setRefreshTokenCookie(response, session);
             response.status(200).json(AuthResponseMapper.toLoginResponseDto({
@@ -379,7 +382,12 @@ export class AuthController {
         }
 
         if (typeof response.clearCookie === 'function') {
-            response.clearCookie('refresh_token', { path: '/auth' });
+            const isProd = process.env.NODE_ENV === 'production';
+            response.clearCookie('refresh_token', {
+                path: '/auth',
+                secure: isProd,
+                sameSite: isProd ? 'none' : 'lax'
+            });
         }
         response.status(204).send();
     }
@@ -437,16 +445,19 @@ export class AuthController {
                 ip: request.ip || request.socket?.remoteAddress
             });
 
+            const isProd = process.env.NODE_ENV === 'production';
             if (typeof response.clearCookie === 'function') {
-                response.clearCookie('captcha_verified_token');
+                response.clearCookie('captcha_verified_token', {
+                    secure: isProd,
+                    sameSite: isProd ? 'none' : 'lax'
+                });
             }
 
             // Set cookie: HttpOnly, secure if in production, maxAge = 5 minutes (5 * 60 * 1000)
-            const isProd = process.env.NODE_ENV === 'production';
             response.cookie('otp_token', result.token, {
                 httpOnly: true,
                 secure: isProd,
-                sameSite: 'lax',
+                sameSite: isProd ? 'none' : 'lax',
                 maxAge: 5 * 60 * 1000
             });
 
@@ -550,8 +561,12 @@ export class AuthController {
             );
 
             // Clear the cookie immediately
+            const isProd = process.env.NODE_ENV === 'production';
             if (typeof response.clearCookie === 'function') {
-                response.clearCookie('otp_token');
+                response.clearCookie('otp_token', {
+                    secure: isProd,
+                    sameSite: isProd ? 'none' : 'lax'
+                });
             }
 
             if (verifiedToken) {
@@ -560,11 +575,10 @@ export class AuthController {
                 }
 
                 // Set cookie: HttpOnly, secure in prod, maxAge = 5 minutes
-                const isProd = process.env.NODE_ENV === 'production';
                 response.cookie('otp_verified_token', verifiedToken, {
                     httpOnly: true,
                     secure: isProd,
-                    sameSite: 'lax',
+                    sameSite: isProd ? 'none' : 'lax',
                     maxAge: 5 * 60 * 1000
                 });
 
@@ -646,7 +660,7 @@ export class AuthController {
             response.cookie('captcha_verified_token', token, {
                 httpOnly: true,
                 secure: isProd,
-                sameSite: 'lax',
+                sameSite: isProd ? 'none' : 'lax',
                 maxAge: 5 * 60 * 1000
             });
 
@@ -793,9 +807,19 @@ export class AuthController {
             // Cleanup
             await this.deleteLoginState(loginStateToken);
             if (typeof response.clearCookie === 'function') {
-                response.clearCookie('login_state_token');
-                response.clearCookie('captcha_verified_token');
-                response.clearCookie('otp_verified_token');
+                const isProd = process.env.NODE_ENV === 'production';
+                response.clearCookie('login_state_token', {
+                    secure: isProd,
+                    sameSite: isProd ? 'none' : 'lax'
+                });
+                response.clearCookie('captcha_verified_token', {
+                    secure: isProd,
+                    sameSite: isProd ? 'none' : 'lax'
+                });
+                response.clearCookie('otp_verified_token', {
+                    secure: isProd,
+                    sameSite: isProd ? 'none' : 'lax'
+                });
             }
 
             this.setRefreshTokenCookie(response, session);
