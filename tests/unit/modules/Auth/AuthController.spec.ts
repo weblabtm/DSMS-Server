@@ -160,10 +160,10 @@ describe('AuthController', () => {
 
     describe('OTP endpoints', () => {
         it('generateOtp: fails when CAPTCHA is invalid', async () => {
-            const googleCaptchaValidator = {
-                validate: vi.fn().mockResolvedValue(false),
+            const otpService = {
+                generateOtp: vi.fn().mockRejectedValue(new Error('Invalid or expired CAPTCHA token.')),
             };
-            const controller = new AuthController({} as never, {} as never, googleCaptchaValidator as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
@@ -174,23 +174,24 @@ describe('AuthController', () => {
                 response as never
             );
 
-            expect(googleCaptchaValidator.validate).toHaveBeenCalledWith('bad', '1.1.1.1');
+            expect(otpService.generateOtp).toHaveBeenCalledWith(expect.objectContaining({
+                captchaToken: 'bad',
+                ip: '1.1.1.1',
+            }));
             expect(response.status).toHaveBeenCalledWith(400);
-            expect(response.json).toHaveBeenCalledWith({ message: 'Invalid CAPTCHA token' });
+            expect(response.json).toHaveBeenCalledWith({ message: 'Invalid or expired CAPTCHA token.' });
         });
 
         it('generateOtp: generates OTP and sets cookie when CAPTCHA is valid', async () => {
-            const googleCaptchaValidator = {
-                validate: vi.fn().mockResolvedValue(true),
-            };
             const otpService = {
                 generateOtp: vi.fn().mockResolvedValue({ token: 'test-token', otp: '123456' }),
             };
-            const controller = new AuthController({} as never, otpService as never, googleCaptchaValidator as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
                 cookie: vi.fn(),
+                clearCookie: vi.fn(),
             };
 
             await controller.generateOtp(
@@ -198,13 +199,13 @@ describe('AuthController', () => {
                 response as never
             );
 
-            expect(otpService.generateOtp).toHaveBeenCalledWith({
+            expect(otpService.generateOtp).toHaveBeenCalledWith(expect.objectContaining({
                 email: 't@e.com',
-                phoneNumber: undefined,
-                tenantId: undefined,
-                branchId: undefined,
-            });
+                captchaToken: 'good',
+                ip: '1.1.1.1',
+            }));
             expect(response.cookie).toHaveBeenCalledWith('otp_token', 'test-token', expect.any(Object));
+            expect(response.clearCookie).toHaveBeenCalledWith('captcha_verified_token');
             expect(response.status).toHaveBeenCalledWith(200);
             expect(response.json).toHaveBeenCalledWith({
                 message: 'OTP generated successfully.',
@@ -229,7 +230,7 @@ describe('AuthController', () => {
                 response as never
             );
 
-            expect(otpService.validateOtpAndStore).toHaveBeenCalledWith('test-token', '123456');
+            expect(otpService.validateOtpAndStore).toHaveBeenCalledWith('test-token', '123456', '', '', '', '', '');
             expect(response.clearCookie).toHaveBeenCalledWith('otp_token');
             expect(response.cookie).toHaveBeenCalledWith('otp_verified_token', 'test-verified-token', expect.any(Object));
             expect(response.status).toHaveBeenCalledWith(200);

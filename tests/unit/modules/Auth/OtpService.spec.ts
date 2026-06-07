@@ -143,4 +143,54 @@ describe('OtpService', () => {
         const saved = await authDao.findOtp(token);
         expect(saved).toBeNull();
     });
+
+    describe('with CaptchaService integrated', () => {
+        let mockCaptchaService: any;
+
+        beforeEach(() => {
+            mockCaptchaService = {
+                validator: {
+                    validate: vi.fn().mockResolvedValue(false), // not bypassed
+                },
+                consumeToken: vi.fn(),
+            };
+            otpService = new OtpService(authDao, mockNotificationService, null, mockCaptchaService);
+        });
+
+        it('throws error if captcha token is missing', async () => {
+            await expect(otpService.generateOtp({ email: 'test@example.com' })).rejects.toThrow(
+                'CAPTCHA verification required.'
+            );
+        });
+
+        it('throws error if captcha service consumeToken returns null (expired or wrong)', async () => {
+            mockCaptchaService.consumeToken.mockResolvedValue(null);
+
+            await expect(otpService.generateOtp({ email: 'test@example.com', captchaToken: 'bad-token' })).rejects.toThrow(
+                'Invalid or expired CAPTCHA token.'
+            );
+            expect(mockCaptchaService.consumeToken).toHaveBeenCalledWith('bad-token', undefined, undefined);
+        });
+
+        it('generates OTP successfully if captcha service validates token', async () => {
+            mockCaptchaService.consumeToken.mockResolvedValue({ identifier: 'test@example.com' });
+
+            const result = await otpService.generateOtp({
+                email: 'test@example.com',
+                captchaToken: 'good-token',
+                deviceFingerprint: 'dev-123'
+            });
+
+            expect(result.token).toBeTruthy();
+            expect(mockCaptchaService.consumeToken).toHaveBeenCalledWith('good-token', undefined, 'dev-123');
+        });
+
+        it('bypasses captcha validation if validator.validate returns true (disabled/bypassed globally)', async () => {
+            mockCaptchaService.validator.validate = vi.fn().mockResolvedValue(true); // bypassed
+
+            const result = await otpService.generateOtp({ email: 'test@example.com' });
+            expect(result.token).toBeTruthy();
+            expect(mockCaptchaService.consumeToken).not.toHaveBeenCalled();
+        });
+    });
 });

@@ -247,7 +247,8 @@ export class ServerApplication {
         const otpService = new OtpService(
             authDao,
             otpNotificationService,
-            redisConnection ? redisConnection.getClient() : null
+            redisConnection ? redisConnection.getClient() : null,
+            captchaService
         );
 
         this.authController = new AuthController(

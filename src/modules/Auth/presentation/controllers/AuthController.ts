@@ -90,8 +90,8 @@ export class AuthController {
 
             // 2. Check if captcha was already verified via cookie (Login page re-submission after /challenge)
             let captchaAlreadyVerified = false;
+            let captchaVerifiedToken = (request as any).cookies?.captcha_verified_token as string | undefined;
             if (this.captchaService) {
-                let captchaVerifiedToken = (request as any).cookies?.captcha_verified_token as string | undefined;
                 if (!captchaVerifiedToken) {
                     const cookieHeader = request.headers.cookie;
                     if (cookieHeader) {
@@ -104,10 +104,7 @@ export class AuthController {
                     }
                 }
                 if (captchaVerifiedToken) {
-                    captchaAlreadyVerified = await this.captchaService.consumeToken(captchaVerifiedToken);
-                    if (captchaAlreadyVerified) {
-                        response.clearCookie('captcha_verified_token');
-                    }
+                    captchaAlreadyVerified = await this.captchaService.isTokenValid(captchaVerifiedToken);
                 }
             }
 
@@ -129,6 +126,7 @@ export class AuthController {
                 branchId: principal.branchId,
                 tokenVersion: principal.tokenVersion,
                 captchaVerified: !needsCaptcha,
+                captchaToken: captchaAlreadyVerified ? captchaVerifiedToken : undefined,
                 deviceFingerprint: dto.deviceFingerprint,
                 deviceOs: dto.deviceOs,
                 devicePlatform: dto.devicePlatform
@@ -358,8 +356,6 @@ export class AuthController {
         try {
             const { email, phoneNumber, captchaToken, mfaToken, unlockToken } = request.body;
 
-            // Session-based trust bypass: skip CAPTCHA if valid loginStateToken, mfaToken or unlockToken is present
-            let skipCaptcha = false;
             let loginStateToken = (request as any).cookies?.login_state_token;
             if (!loginStateToken) {
                 const cookieHeader = request.headers.cookie;
@@ -373,31 +369,24 @@ export class AuthController {
                 }
             }
 
+            let loginStateCaptchaToken = '';
             if (loginStateToken) {
                 const loginState = await this.getLoginState(loginStateToken);
-                if (loginState) {
-                    skipCaptcha = true;
-                }
-            } else if (mfaToken) {
-                const tx = await this.mfaTransactionStore.getTransaction(mfaToken);
-                if (tx) {
-                    skipCaptcha = true;
-                }
-            } else if (unlockToken) {
-                const user = typeof this.authService.dependencies.authDao.getUserByUnlockToken === 'function'
-                    ? await this.authService.dependencies.authDao.getUserByUnlockToken(unlockToken)
-                    : null;
-                if (user && (!user.unlockTokenExpiresAt || user.unlockTokenExpiresAt.getTime() >= Date.now())) {
-                    skipCaptcha = true;
+                if (loginState && loginState.captchaToken) {
+                    loginStateCaptchaToken = loginState.captchaToken;
                 }
             }
 
-            if (!skipCaptcha) {
-                const ip = request.ip || request.socket?.remoteAddress;
-                const isValidCaptcha = await this.captchaValidator.validate(captchaToken || '', ip);
-                if (!isValidCaptcha) {
-                    response.status(400).json({ message: 'Invalid CAPTCHA token' });
-                    return;
+            let activeCaptchaToken = captchaToken || loginStateCaptchaToken || (request as any).cookies?.captcha_verified_token;
+            if (!activeCaptchaToken) {
+                const cookieHeader = request.headers.cookie;
+                if (cookieHeader) {
+                    const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                        const [name, val] = c.split('=').map(x => x.trim());
+                        if (name) acc[name] = val;
+                        return acc;
+                    }, {} as Record<string, string>);
+                    activeCaptchaToken = cookies['captcha_verified_token'];
                 }
             }
 
@@ -410,8 +399,15 @@ export class AuthController {
                 email,
                 phoneNumber,
                 tenantId,
-                branchId
+                branchId,
+                captchaToken: activeCaptchaToken,
+                deviceFingerprint: (request.body.deviceFingerprint as string) || '',
+                ip: request.ip || request.socket?.remoteAddress
             });
+
+            if (typeof response.clearCookie === 'function') {
+                response.clearCookie('captcha_verified_token');
+            }
 
             // Set cookie: HttpOnly, secure if in production, maxAge = 5 minutes (5 * 60 * 1000)
             const isProd = process.env.NODE_ENV === 'production';
@@ -466,7 +462,60 @@ export class AuthController {
                 return;
             }
 
-            const verifiedToken = await this.otpService.validateOtpAndStore(token, otp);
+            // Resolve identifier + device context so the issued OTP verified
+            // token is bound to the originating user and device.
+            let otpIdentifier = '';
+            let otpUserId = '';
+            let otpDeviceFingerprint = '';
+            let otpDeviceOs = '';
+            let otpDevicePlatform = '';
+
+            // Login flow: pull binding from loginState cookie
+            let otpLoginStateToken = (request as any).cookies?.login_state_token;
+            if (!otpLoginStateToken) {
+                const cookieHeader = request.headers.cookie;
+                if (cookieHeader) {
+                    const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                        const [name, val] = c.split('=').map(x => x.trim());
+                        if (name) acc[name] = val;
+                        return acc;
+                    }, {} as Record<string, string>);
+                    otpLoginStateToken = cookies['login_state_token'];
+                }
+            }
+            if (otpLoginStateToken) {
+                const loginState = await this.getLoginState(otpLoginStateToken);
+                if (loginState) {
+                    otpIdentifier = loginState.identifier ?? '';
+                    otpUserId = loginState.userId ?? '';
+                    otpDeviceFingerprint = loginState.deviceFingerprint ?? '';
+                    otpDeviceOs = loginState.deviceOs ?? '';
+                    otpDevicePlatform = loginState.devicePlatform ?? '';
+                }
+            } else if (unlockToken) {
+                // Unlock flow: pull binding from the unlock token user record
+                const unlockUser = typeof this.authService.dependencies.authDao.getUserByUnlockToken === 'function'
+                    ? await this.authService.dependencies.authDao.getUserByUnlockToken(unlockToken)
+                    : null;
+                if (unlockUser) {
+                    otpIdentifier = unlockUser.identifier ?? '';
+                    otpUserId = unlockUser.id ?? '';
+                    // Device info is sent in the request body for the unlock flow
+                    otpDeviceFingerprint = (request.body.deviceFingerprint as string) ?? '';
+                    otpDeviceOs = (request.body.deviceOs as string) ?? '';
+                    otpDevicePlatform = (request.body.devicePlatform as string) ?? '';
+                }
+            }
+
+            const verifiedToken = await this.otpService.validateOtpAndStore(
+                token,
+                otp,
+                otpIdentifier,
+                otpUserId,
+                otpDeviceFingerprint,
+                otpDeviceOs,
+                otpDevicePlatform
+            );
 
             // Clear the cookie immediately
             if (typeof response.clearCookie === 'function') {
@@ -511,7 +560,51 @@ export class AuthController {
                 return;
             }
 
-            const token = await this.captchaService.validateAndStore(captchaToken || '', ip);
+            // Resolve identifier + device fingerprint from the login state so the
+            // issued captcha token is cryptographically bound to this user + device.
+            let identifier = '';
+            let deviceFingerprint = '';
+            let captchaLoginStateToken = (request as any).cookies?.login_state_token;
+            if (!captchaLoginStateToken) {
+                const cookieHeader = request.headers.cookie;
+                if (cookieHeader) {
+                    const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                        const [name, val] = c.split('=').map(x => x.trim());
+                        if (name) acc[name] = val;
+                        return acc;
+                    }, {} as Record<string, string>);
+                    captchaLoginStateToken = cookies['login_state_token'];
+                }
+            }
+            if (captchaLoginStateToken) {
+                const loginState = await this.getLoginState(captchaLoginStateToken);
+                if (loginState) {
+                    identifier = loginState.identifier ?? '';
+                    deviceFingerprint = loginState.deviceFingerprint ?? '';
+                }
+            }
+
+            // Fallback: if no loginState (e.g. pre-login captcha), read binding values
+            // from the request body that the client sends alongside the captcha token.
+            if (!identifier) {
+                identifier = (request.body.identifier as string) ?? '';
+            }
+            if (!deviceFingerprint) {
+                deviceFingerprint = (request.body.deviceFingerprint as string) ?? '';
+            }
+            const captchaUserId = captchaLoginStateToken
+                ? ((await this.getLoginState(captchaLoginStateToken))?.userId ?? '')
+                : ((request.body.userId as string) ?? '');
+            const captchaDeviceOs = captchaLoginStateToken
+                ? ((await this.getLoginState(captchaLoginStateToken))?.deviceOs ?? '')
+                : ((request.body.deviceOs as string) ?? '');
+            const captchaDevicePlatform = captchaLoginStateToken
+                ? ((await this.getLoginState(captchaLoginStateToken))?.devicePlatform ?? '')
+                : ((request.body.devicePlatform as string) ?? '');
+
+            const token = await this.captchaService.validateAndStore(
+                captchaToken || '', ip, identifier, captchaUserId, deviceFingerprint, captchaDeviceOs, captchaDevicePlatform
+            );
             if (!token) {
                 response.status(400).json({ message: 'Invalid CAPTCHA token' });
                 return;
@@ -595,8 +688,13 @@ export class AuthController {
                     return;
                 }
 
-                const isCaptchaValid = await this.captchaService.consumeToken(captchaVerifiedToken);
-                if (!isCaptchaValid) {
+                // Consume captcha token with binding check: same user + same device
+                const captchaPayload = await this.captchaService.consumeToken(
+                    captchaVerifiedToken,
+                    loginState.identifier,
+                    loginState.deviceFingerprint
+                );
+                if (!captchaPayload) {
                     response.status(401).json({ message: 'CAPTCHA verification invalid or expired.' });
                     return;
                 }
@@ -625,8 +723,13 @@ export class AuthController {
                     return;
                 }
 
-                const isOtpValid = await this.otpService.consumeOtpToken(otpVerifiedToken);
-                if (!isOtpValid) {
+                // Consume OTP token with binding check: same user + same device
+                const otpPayload = await this.otpService.consumeOtpToken(
+                    otpVerifiedToken,
+                    loginState.identifier,
+                    loginState.deviceFingerprint
+                );
+                if (!otpPayload) {
                     response.status(401).json({ message: 'OTP verification invalid or expired.' });
                     return;
                 }
