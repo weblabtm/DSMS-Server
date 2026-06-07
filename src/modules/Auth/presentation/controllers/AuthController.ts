@@ -79,11 +79,6 @@ export class AuthController {
         try {
             const dto = AuthRequestMapper.toLoginRequestDto(request.body);
             dto.ipAddress = request.ip || request.socket?.remoteAddress;
-            
-            const hostTenantSlug = resolveTenantSlug(request.headers);
-            if (hostTenantSlug) {
-                dto.tenantId = hostTenantSlug;
-            }
 
             // 1. Authenticate user's credentials
             const principal = await this.authService.authenticateCredentials(dto);
@@ -306,11 +301,6 @@ export class AuthController {
     public async register(request: Request, response: Response): Promise<void> {
         const dto = AuthRequestMapper.toRegisterRequestDto(request.body);
         
-        const hostTenantSlug = resolveTenantSlug(request.headers);
-        if (hostTenantSlug) {
-            dto.tenantId = hostTenantSlug;
-        }
-
         const inviterRole = request.authContext?.roles[0];
 
         try {
@@ -434,8 +424,7 @@ export class AuthController {
             }
 
             // Resolve tenant and branch context if present
-            const hostTenantSlug = resolveTenantSlug(request.headers);
-            const tenantId = hostTenantSlug || (request.headers['x-tenant-id'] as string) || undefined;
+            const tenantId = resolveTenantSlug(request.headers);
             const branchId = (request.headers['x-branch-id'] as string) || undefined;
 
             const result = await this.otpService.generateOtp({
