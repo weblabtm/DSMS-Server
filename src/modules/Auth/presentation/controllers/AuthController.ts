@@ -715,8 +715,8 @@ export class AuthController {
                 if (!captchaVerifiedToken) {
                     const cookieHeader = request.headers.cookie;
                     if (cookieHeader) {
-                        const cookies = cookieHeader.split(';').reduce((acc, c) => {
-                            const [name, val] = c.split('=').map(x => x.trim());
+                        const cookies = cookieHeader.split(';').reduce((acc: Record<string, string>, c: string) => {
+                            const [name, val] = c.split('=').map((x: string) => x.trim());
                             if (name) acc[name] = val;
                             return acc;
                         }, {} as Record<string, string>);
@@ -756,8 +756,8 @@ export class AuthController {
                 if (!otpVerifiedToken) {
                     const cookieHeader = request.headers.cookie;
                     if (cookieHeader) {
-                        const cookies = cookieHeader.split(';').reduce((acc, c) => {
-                            const [name, val] = c.split('=').map(x => x.trim());
+                        const cookies = cookieHeader.split(';').reduce((acc: Record<string, string>, c: string) => {
+                            const [name, val] = c.split('=').map((x: string) => x.trim());
                             if (name) acc[name] = val;
                             return acc;
                         }, {} as Record<string, string>);
