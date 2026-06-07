@@ -16,7 +16,7 @@ import { AuthResponseMapper } from '../mappers/AuthResponseMapper.js';
 import { resolveTenantSlug } from '../../../../shared/utils/tenantResolver.js';
 
 export class AuthController {
-    private readonly loginStateMemoryStore = new Map<string, { userId: string; identifier: string; rememberMe?: boolean; roles: readonly string[]; tenantId?: string; branchId?: string; tokenVersion?: number; captchaVerified?: boolean; expiresAt: Date }>();
+    private readonly loginStateMemoryStore = new Map<string, { userId: string; identifier: string; rememberMe?: boolean; roles: readonly string[]; tenantId?: string; branchId?: string; tokenVersion?: number; captchaVerified?: boolean; deviceFingerprint?: string; deviceOs?: string; devicePlatform?: string; expiresAt: Date }>();
 
     public constructor(
         private readonly authService: AuthService,
@@ -128,7 +128,10 @@ export class AuthController {
                 tenantId: principal.tenantId,
                 branchId: principal.branchId,
                 tokenVersion: principal.tokenVersion,
-                captchaVerified: !needsCaptcha
+                captchaVerified: !needsCaptcha,
+                deviceFingerprint: dto.deviceFingerprint,
+                deviceOs: dto.deviceOs,
+                devicePlatform: dto.devicePlatform
             };
             await this.saveLoginState(loginStateToken, loginStateData);
 
@@ -165,6 +168,9 @@ export class AuthController {
                 tenantId: principal.tenantId,
                 branchId: principal.branchId,
                 tokenVersion: principal.tokenVersion,
+                deviceFingerprint: dto.deviceFingerprint,
+                deviceOs: dto.deviceOs,
+                devicePlatform: dto.devicePlatform,
             }, dto.rememberMe);
 
             // Clean up temporary login state
@@ -619,6 +625,9 @@ export class AuthController {
                 tenantId: loginState.tenantId,
                 branchId: loginState.branchId,
                 tokenVersion: loginState.tokenVersion,
+                deviceFingerprint: loginState.deviceFingerprint,
+                deviceOs: loginState.deviceOs,
+                devicePlatform: loginState.devicePlatform,
             }, loginState.rememberMe);
 
             // Cleanup
@@ -641,6 +650,53 @@ export class AuthController {
                 rememberMe: session.rememberMe,
             }));
 
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            response.status(400).json({ message });
+        }
+    }
+
+    // GET /auth/sessions
+    public async getActiveSessions(request: Request, response: Response): Promise<void> {
+        try {
+            const userId = request.authContext?.userId;
+            if (!userId) {
+                response.status(401).json({ message: 'Unauthorized.' });
+                return;
+            }
+
+            const sessionService = (this.authService as any).dependencies?.sessionService;
+            if (!sessionService || typeof sessionService.getActiveSessionsForUser !== 'function') {
+                response.status(501).json({ message: 'Session listing not supported.' });
+                return;
+            }
+
+            const sessions = await sessionService.getActiveSessionsForUser(userId);
+            response.status(200).json({ sessions });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            response.status(500).json({ message });
+        }
+    }
+
+    // DELETE /auth/sessions/:sessionId
+    public async revokeSession(request: Request, response: Response): Promise<void> {
+        try {
+            const userId = request.authContext?.userId;
+            if (!userId) {
+                response.status(401).json({ message: 'Unauthorized.' });
+                return;
+            }
+
+            const { sessionId } = request.params;
+            if (!sessionId) {
+                response.status(400).json({ message: 'Session ID is required.' });
+                return;
+            }
+
+            // Revoke via the auth service logout-by-session path
+            await this.authService.revokeSessionById(String(sessionId), String(userId));
+            response.status(204).send();
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             response.status(400).json({ message });

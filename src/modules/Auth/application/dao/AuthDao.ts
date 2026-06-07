@@ -43,4 +43,12 @@ export interface AuthDao {
     deleteOtp(token: string): Promise<void>;
 
     deleteExpiredOtps(): Promise<number>;
+
+    syncDevice(device: {
+        deviceId: string;
+        userId: string;
+        model?: string;
+        osVersion?: string;
+        platform?: string;
+    }): Promise<void>;
 }

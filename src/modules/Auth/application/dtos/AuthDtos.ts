@@ -13,6 +13,12 @@ export type AuthLoginRequestDto = {
     captchaToken?: string;
     rememberMe?: boolean;
     mfaToken?: string;
+    deviceId?: string;
+    deviceModel?: string;
+    deviceOsVersion?: string;
+    devicePlatform?: string;
+    deviceFingerprint?: string;
+    deviceOs?: string;
 };
 
 export type AuthRegisterRequestDto = {

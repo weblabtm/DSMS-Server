@@ -260,4 +260,23 @@ export class InMemoryAuthDao implements AuthDao {
         }
         return count;
     }
+
+    private readonly devices: Array<{ deviceId: string; userId: string; model?: string; osVersion?: string; platform?: string }> = [];
+
+    public async syncDevice(device: {
+        deviceId: string;
+        userId: string;
+        model?: string;
+        osVersion?: string;
+        platform?: string;
+    }): Promise<void> {
+        const existing = this.devices.find(d => d.userId === device.userId && d.deviceId === device.deviceId);
+        if (existing) {
+            existing.model = device.model;
+            existing.osVersion = device.osVersion;
+            existing.platform = device.platform;
+        } else {
+            this.devices.push({ ...device });
+        }
+    }
 }

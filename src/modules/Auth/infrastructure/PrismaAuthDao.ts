@@ -319,4 +319,33 @@ export class PrismaAuthDao implements AuthDao {
         });
         return result.count;
     }
+
+    public async syncDevice(device: {
+        deviceId: string;
+        userId: string;
+        model?: string;
+        osVersion?: string;
+        platform?: string;
+    }): Promise<void> {
+        await (this.prisma as any).device.upsert({
+            where: {
+                userId_deviceId: {
+                    userId: device.userId,
+                    deviceId: device.deviceId,
+                },
+            },
+            update: {
+                model: device.model,
+                osVersion: device.osVersion,
+                platform: device.platform,
+            },
+            create: {
+                deviceId: device.deviceId,
+                userId: device.userId,
+                model: device.model,
+                osVersion: device.osVersion,
+                platform: device.platform,
+            },
+        });
+    }
 }

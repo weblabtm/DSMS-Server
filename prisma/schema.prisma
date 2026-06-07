@@ -25,6 +25,9 @@ model AuthSession {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   rememberMe      Boolean  @default(false)
+  deviceFingerprint String?
+  deviceOs          String?
+  devicePlatform    String?
 
   @@index([userId])
   @@index([tenantId, branchId])
@@ -55,6 +58,21 @@ model AuthUser {
   updatedAt            DateTime  @updatedAt
 
   @@index([tenantId, branchId])
+}
+
+
+// ===== src\modules\Auth\prisma\Device.prisma =====
+model Device {
+  id          String   @id @default(cuid())
+  deviceId    String
+  userId      String
+  model       String?
+  osVersion   String?
+  platform    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, deviceId])
 }
 
 

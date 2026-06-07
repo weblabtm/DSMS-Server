@@ -33,6 +33,9 @@ export class PrismaSessionService {
                 branchId: input.branchId,
                 expiresAt,
                 rememberMe: input.rememberMe ?? false,
+                deviceFingerprint: input.deviceFingerprint,
+                deviceOs: input.deviceOs,
+                devicePlatform: input.devicePlatform,
             },
         });
 
@@ -50,6 +53,9 @@ export class PrismaSessionService {
             expiresAt: Math.floor(created.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(created.updatedAt.getTime() / 1000),
             rememberMe: created.rememberMe,
+            deviceFingerprint: created.deviceFingerprint ?? undefined,
+            deviceOs: created.deviceOs ?? undefined,
+            devicePlatform: created.devicePlatform ?? undefined,
         };
 
         return record;
@@ -103,6 +109,9 @@ export class PrismaSessionService {
             expiresAt: Math.floor(found.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(found.updatedAt.getTime() / 1000),
             rememberMe: found.rememberMe,
+            deviceFingerprint: found.deviceFingerprint ?? undefined,
+            deviceOs: found.deviceOs ?? undefined,
+            devicePlatform: found.devicePlatform ?? undefined,
         };
     }
 
@@ -259,11 +268,37 @@ export class PrismaSessionService {
             expiresAt: Math.floor(updated.expiresAt.getTime() / 1000),
             rotatedAt: Math.floor(updated.updatedAt.getTime() / 1000),
             rememberMe: updated.rememberMe,
+            deviceFingerprint: updated.deviceFingerprint ?? undefined,
+            deviceOs: updated.deviceOs ?? undefined,
+            devicePlatform: updated.devicePlatform ?? undefined,
         };
     }
 
     public async updateAccessTokenJti(sessionId: string, accessTokenJti: string): Promise<void> {
         await (this.prisma as any).authSession.update({ where: { id: sessionId }, data: { accessTokenJti } });
+    }
+
+    public async findBySessionId(sessionId: string): Promise<SessionRecord | undefined> {
+        const found = await (this.prisma as any).authSession.findUnique({ where: { id: sessionId } });
+        if (!found) return undefined;
+        return {
+            sessionId: found.id,
+            userId: found.userId,
+            roles: [],
+            tenantId: found.tenantId ?? undefined,
+            branchId: found.branchId ?? undefined,
+            tokenVersion: found.tokenVersion,
+            refreshToken: '',
+            refreshTokenHash: found.refreshTokenHash,
+            previousTokenHash: found.previousTokenHash ?? undefined,
+            createdAt: Math.floor(found.createdAt.getTime() / 1000),
+            expiresAt: Math.floor(found.expiresAt.getTime() / 1000),
+            rotatedAt: Math.floor(found.updatedAt.getTime() / 1000),
+            rememberMe: found.rememberMe,
+            deviceFingerprint: found.deviceFingerprint ?? undefined,
+            deviceOs: found.deviceOs ?? undefined,
+            devicePlatform: found.devicePlatform ?? undefined,
+        };
     }
 
     public async revokeSession(sessionId: string): Promise<void> {
@@ -298,5 +333,35 @@ export class PrismaSessionService {
 
     private deriveNextToken(token: string): string {
         return createHmac('sha256', this.secretKey).update(token).digest('hex');
+    }
+
+    public async getActiveSessionsForUser(userId: string): Promise<SessionRecord[]> {
+        const sessions = await (this.prisma as any).authSession.findMany({
+            where: {
+                userId,
+                revokedAt: null,
+                expiresAt: { gt: new Date() }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        return sessions.map((s: any) => ({
+            sessionId: s.id,
+            userId: s.userId,
+            roles: [],
+            tenantId: s.tenantId ?? undefined,
+            branchId: s.branchId ?? undefined,
+            tokenVersion: s.tokenVersion,
+            refreshToken: '',
+            refreshTokenHash: s.refreshTokenHash,
+            previousTokenHash: s.previousTokenHash ?? undefined,
+            createdAt: Math.floor(s.createdAt.getTime() / 1000),
+            expiresAt: Math.floor(s.expiresAt.getTime() / 1000),
+            rotatedAt: Math.floor(s.updatedAt.getTime() / 1000),
+            rememberMe: s.rememberMe,
+            deviceFingerprint: s.deviceFingerprint ?? undefined,
+            deviceOs: s.deviceOs ?? undefined,
+            devicePlatform: s.devicePlatform ?? undefined,
+        }));
     }
 }

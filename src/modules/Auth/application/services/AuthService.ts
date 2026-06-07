@@ -266,8 +266,19 @@ export class AuthService {
             tenantId?: string;
             branchId?: string;
             tokenVersion?: number;
+            deviceFingerprint?: string;
+            deviceOs?: string;
+            devicePlatform?: string;
         },
-        rememberMe?: boolean
+        rememberMe?: boolean,
+        deviceDetails?: {
+            deviceFingerprint?: string;
+            deviceOs?: string;
+            devicePlatform?: string;
+            deviceId?: string;
+            deviceModel?: string;
+            deviceOsVersion?: string;
+        }
     ): Promise<AuthSessionBundle> {
         const accessToken = this.dependencies.tokenService.issueAccessToken({
             subject: principal.userId,
@@ -279,6 +290,11 @@ export class AuthService {
 
         const claims = this.dependencies.tokenService.verifyAccessToken(accessToken);
 
+        // Resolve device info: inline principal fields take priority over the legacy deviceDetails param
+        const resolvedFingerprint = principal.deviceFingerprint ?? deviceDetails?.deviceFingerprint;
+        const resolvedOs = principal.deviceOs ?? deviceDetails?.deviceOs;
+        const resolvedPlatform = principal.devicePlatform ?? deviceDetails?.devicePlatform;
+
         const session = await this.dependencies.sessionService.createSessionWithAccessJti({
             userId: principal.userId,
             roles: principal.roles,
@@ -287,7 +303,20 @@ export class AuthService {
             tokenVersion: principal.tokenVersion,
             accessTokenJti: claims.jti,
             rememberMe,
+            deviceFingerprint: resolvedFingerprint,
+            deviceOs: resolvedOs,
+            devicePlatform: resolvedPlatform,
         });
+
+        if (deviceDetails?.deviceId) {
+            await this.dependencies.authDao.syncDevice({
+                deviceId: deviceDetails.deviceId,
+                userId: principal.userId,
+                model: deviceDetails.deviceModel,
+                osVersion: deviceDetails.deviceOsVersion,
+                platform: resolvedPlatform,
+            });
+        }
 
         return {
             sessionId: session.sessionId,
@@ -300,6 +329,7 @@ export class AuthService {
                 tenantId: principal.tenantId,
                 branchId: principal.branchId,
                 tokenVersion: session.tokenVersion,
+                accessTokenJti: claims.jti,
             }),
             rememberMe: session.rememberMe,
         };
@@ -341,6 +371,20 @@ export class AuthService {
         }
 
         await (this.dependencies.sessionService as any).revokeSession(session.sessionId);
+    }
+
+    public async revokeSessionById(sessionId: string, requestingUserId: string): Promise<void> {
+        const sessionService = this.dependencies.sessionService as any;
+        if (typeof sessionService.findBySessionId === 'function') {
+            const session = await sessionService.findBySessionId(sessionId);
+            if (!session) {
+                throw new Error('Session not found.');
+            }
+            if (session.userId !== requestingUserId) {
+                throw new Error('Cannot revoke a session that does not belong to you.');
+            }
+        }
+        await (this.dependencies.sessionService as any).revokeSession(sessionId);
     }
 
     public async refreshSession(refreshToken: string): Promise<AuthSessionBundle> {

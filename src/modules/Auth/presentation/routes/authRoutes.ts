@@ -39,5 +39,11 @@ export const createAuthRouter = (
     // POST /auth/otp/validate
     router.post('/otp/validate', controller.validateOtp.bind(controller));
 
+    // GET /auth/sessions  – list all active sessions for the authenticated user
+    router.get('/sessions', authenticationMiddleware.handle.bind(authenticationMiddleware), controller.getActiveSessions.bind(controller));
+
+    // DELETE /auth/sessions/:sessionId  – revoke a specific session
+    router.delete('/sessions/:sessionId', authenticationMiddleware.handle.bind(authenticationMiddleware), controller.revokeSession.bind(controller));
+
     return router;
 };

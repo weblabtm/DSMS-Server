@@ -27,6 +27,9 @@ export type SessionRecord = {
     previousRefreshToken?: string;
     rotatedAt?: number;
     rememberMe?: boolean;
+    deviceFingerprint?: string;
+    deviceOs?: string;
+    devicePlatform?: string;
 };
 
 export type CreateSessionInput = {
@@ -36,6 +39,9 @@ export type CreateSessionInput = {
     branchId?: string;
     tokenVersion?: number;
     rememberMe?: boolean;
+    deviceFingerprint?: string;
+    deviceOs?: string;
+    devicePlatform?: string;
 };
 
 export type CreateSessionWithAccessJtiInput = CreateSessionInput & {
@@ -75,6 +81,9 @@ export class SessionService {
             createdAt: this.clock(),
             expiresAt: this.clock() + ttl,
             rememberMe: input.rememberMe ?? false,
+            deviceFingerprint: input.deviceFingerprint,
+            deviceOs: input.deviceOs,
+            devicePlatform: input.devicePlatform,
         };
 
         this.sessionsById.set(session.sessionId, session);
@@ -99,6 +108,9 @@ export class SessionService {
             createdAt: this.clock(),
             expiresAt: this.clock() + ttl,
             rememberMe: input.rememberMe ?? false,
+            deviceFingerprint: input.deviceFingerprint,
+            deviceOs: input.deviceOs,
+            devicePlatform: input.devicePlatform,
         };
 
         this.sessionsById.set(session.sessionId, session);
@@ -214,6 +226,16 @@ export class SessionService {
             ...session,
             revokedAt: this.clock(),
         });
+    }
+
+    public async getActiveSessionsForUser(userId: string): Promise<SessionRecord[]> {
+        const result: SessionRecord[] = [];
+        for (const session of this.sessionsById.values()) {
+            if (session.userId === userId && !session.revokedAt && session.expiresAt > this.clock()) {
+                result.push({ ...session });
+            }
+        }
+        return result.sort((a, b) => b.createdAt - a.createdAt);
     }
 
     private hashToken(token: string): string {
