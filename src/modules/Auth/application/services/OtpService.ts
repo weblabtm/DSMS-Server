@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { type RedisClientType } from 'redis';
 import type { AuthDao } from '../dao/AuthDao.js';
 import type { IOtpNotificationService } from './IOtpNotificationService.js';
 
@@ -11,9 +12,12 @@ export type OtpGenerateInput = {
 };
 
 export class OtpService {
+    private readonly memoryStore = new Map<string, { verified: boolean; expiresAt: Date }>();
+
     public constructor(
         private readonly authDao: AuthDao,
-        private readonly notificationService: IOtpNotificationService
+        private readonly notificationService: IOtpNotificationService,
+        private readonly redisClient: RedisClientType | null = null
     ) {}
 
     public async generateOtp(input: OtpGenerateInput): Promise<{ token: string; otp: string }> {
@@ -84,5 +88,50 @@ export class OtpService {
         await this.authDao.deleteOtp(token);
 
         return isValid;
+    }
+
+    public async validateOtpAndStore(token: string, otp: string): Promise<string | null> {
+        const isValid = await this.validateOtp(token, otp);
+        if (!isValid) {
+            return null;
+        }
+
+        const verifiedToken = crypto.randomUUID();
+        if (this.redisClient && this.redisClient.isOpen) {
+            // Set 5-minute TTL (300 seconds)
+            await this.redisClient.setEx(`otp:verified:${verifiedToken}`, 300, 'true');
+        } else {
+            const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+            this.memoryStore.set(verifiedToken, { verified: true, expiresAt });
+        }
+        return verifiedToken;
+    }
+
+    public async isOtpTokenValid(token: string): Promise<boolean> {
+        if (!token) return false;
+        if (this.redisClient && this.redisClient.isOpen) {
+            const exists = await this.redisClient.get(`otp:verified:${token}`);
+            return exists === 'true';
+        } else {
+            const entry = this.memoryStore.get(token);
+            if (!entry || new Date() > entry.expiresAt) {
+                if (entry) this.memoryStore.delete(token);
+                return false;
+            }
+            return entry.verified;
+        }
+    }
+
+    public async consumeOtpToken(token: string): Promise<boolean> {
+        if (!token) return false;
+        const valid = await this.isOtpTokenValid(token);
+        if (valid) {
+            if (this.redisClient && this.redisClient.isOpen) {
+                await this.redisClient.del(`otp:verified:${token}`);
+            } else {
+                this.memoryStore.delete(token);
+            }
+        }
+        return valid;
     }
 }

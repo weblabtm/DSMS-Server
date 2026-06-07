@@ -473,7 +473,7 @@ describe('AuthService', () => {
         };
         const mfaTransactionStore = {
             createTransaction: vi.fn(),
-            getTransaction: vi.fn(),
+            getTransaction: vi.fn().mockResolvedValue({ userId: 'user-123' }),
             markVerified: vi.fn(),
             isVerified: vi.fn().mockResolvedValue(true),
             deleteTransaction: vi.fn().mockResolvedValue(undefined),
@@ -513,7 +513,7 @@ describe('AuthService', () => {
         };
         const mfaTransactionStore = {
             createTransaction: vi.fn(),
-            getTransaction: vi.fn(),
+            getTransaction: vi.fn().mockResolvedValue({ userId: 'user-123' }),
             markVerified: vi.fn(),
             isVerified: vi.fn().mockResolvedValue(false),
             deleteTransaction: vi.fn(),

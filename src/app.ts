@@ -24,7 +24,7 @@ import { RedisConnection } from './infrastructure/redis/redis-connection.js';
 import { BruteForceProtectionService } from './modules/Auth/application/services/BruteForceProtectionService.js';
 import { RedisBruteForceStore } from './modules/Auth/infrastructure/RedisBruteForceStore.js';
 import { TurnstileCaptchaValidator } from './modules/Auth/infrastructure/captcha/TurnstileCaptchaValidator.js';
-import { GoogleCaptchaValidator } from './modules/Auth/infrastructure/captcha/GoogleCaptchaValidator.js';
+import { CaptchaService } from './modules/Auth/application/services/CaptchaService.js';
 import { OtpService } from './modules/Auth/application/services/OtpService.js';
 import { type IOtpNotificationService } from './modules/Auth/application/services/IOtpNotificationService.js';
 import { CronScheduler } from './shared/infrastructure/cron/CronScheduler.js';
@@ -234,13 +234,30 @@ export class ServerApplication {
             }
         };
 
-        const googleCaptchaValidator = new GoogleCaptchaValidator(
-            environment.recaptchaSecretKey,
+        const turnstileCaptchaValidator = new TurnstileCaptchaValidator(
+            environment.turnstileSecretKey,
             environment.disableCaptcha
         );
 
-        const otpService = new OtpService(authDao, otpNotificationService);
-        this.authController = new AuthController(authService, otpService, googleCaptchaValidator, mfaTransactionStore);
+        const captchaService = new CaptchaService(
+            turnstileCaptchaValidator,
+            redisConnection ? redisConnection.getClient() : null
+        );
+
+        const otpService = new OtpService(
+            authDao,
+            otpNotificationService,
+            redisConnection ? redisConnection.getClient() : null
+        );
+
+        this.authController = new AuthController(
+            authService,
+            otpService,
+            turnstileCaptchaValidator,
+            mfaTransactionStore,
+            captchaService,
+            redisConnection ? redisConnection.getClient() : null
+        );
 
         // Application-level scheduler for background tasks (e.g. OTP cleanup)
         const cronScheduler = new CronScheduler();
@@ -302,6 +319,11 @@ export class ServerApplication {
         return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
             const ip = request.ip || request.socket.remoteAddress || 'unknown';
             try {
+                if (process.env.DISABLE_OTP_RATE_LIMIT === 'true') {
+                    next();
+                    return;
+                }
+
                 const isBlocked = await bruteForceService.isIpBlocked(ip);
                 if (isBlocked) {
                     response.status(403).json({ message: 'Access denied. IP is temporarily blocked.' });
@@ -480,7 +502,6 @@ export class ServerApplication {
         response.status(200).json({
             apiBaseUrl: `${request.protocol}://${request.get('host') ?? 'localhost'}`,
             hostname: request.hostname,
-            recaptchaSiteKey: process.env.GOOGLE_reCAPTCHA_SITE_KEY || '6LedABAtAAAAAOBhX3sS_v8h6g5e-eG4P-Z3t0oZ',
         });
     }
 

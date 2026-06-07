@@ -3,22 +3,61 @@
  * It only translates requests to DTOs and returns the service response as JSON.
  */
 import type { Request, Response } from 'express';
+import crypto from 'crypto';
+import { type RedisClientType } from 'redis';
 
 import { AuthService } from '../../application/services/AuthService.js';
 import { OtpService } from '../../application/services/OtpService.js';
 import { type IMfaTransactionStore } from '../../application/services/IMfaTransactionStore.js';
 import { type ICaptchaValidator } from '../../application/services/ICaptchaValidator.js';
+import { CaptchaService } from '../../application/services/CaptchaService.js';
 import { AuthRequestMapper } from '../mappers/AuthRequestMapper.js';
 import { AuthResponseMapper } from '../mappers/AuthResponseMapper.js';
 import { resolveTenantSlug } from '../../../../shared/utils/tenantResolver.js';
 
 export class AuthController {
+    private readonly loginStateMemoryStore = new Map<string, { userId: string; identifier: string; rememberMe?: boolean; roles: readonly string[]; tenantId?: string; branchId?: string; tokenVersion?: number; captchaVerified?: boolean; expiresAt: Date }>();
+
     public constructor(
         private readonly authService: AuthService,
         private readonly otpService: OtpService,
-        private readonly googleCaptchaValidator: ICaptchaValidator,
-        private readonly mfaTransactionStore: IMfaTransactionStore
+        private readonly captchaValidator: ICaptchaValidator,
+        private readonly mfaTransactionStore: IMfaTransactionStore,
+        private readonly captchaService?: CaptchaService,
+        private readonly redisClient: RedisClientType | null = null
     ) { }
+
+    private async saveLoginState(token: string, data: any): Promise<void> {
+        if (this.redisClient && this.redisClient.isOpen) {
+            await this.redisClient.setEx(`login:state:${token}`, 300, JSON.stringify(data));
+        } else {
+            const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+            this.loginStateMemoryStore.set(token, { ...data, expiresAt });
+        }
+    }
+
+    private async getLoginState(token: string): Promise<any | null> {
+        if (this.redisClient && this.redisClient.isOpen) {
+            const data = await this.redisClient.get(`login:state:${token}`);
+            if (!data) return null;
+            return JSON.parse(data);
+        } else {
+            const entry = this.loginStateMemoryStore.get(token);
+            if (!entry || new Date() > entry.expiresAt) {
+                if (entry) this.loginStateMemoryStore.delete(token);
+                return null;
+            }
+            return entry;
+        }
+    }
+
+    private async deleteLoginState(token: string): Promise<void> {
+        if (this.redisClient && this.redisClient.isOpen) {
+            await this.redisClient.del(`login:state:${token}`);
+        } else {
+            this.loginStateMemoryStore.delete(token);
+        }
+    }
 
     private setRefreshTokenCookie(response: Response, session: { refreshToken: string; rememberMe?: boolean }): void {
         if (typeof response.cookie !== 'function') {
@@ -40,30 +79,112 @@ export class AuthController {
         try {
             const dto = AuthRequestMapper.toLoginRequestDto(request.body);
             dto.ipAddress = request.ip || request.socket?.remoteAddress;
-            dto.captchaToken = (request.body as any)?.captchaToken;
-            dto.mfaToken = (request.body as any)?.mfaToken;
             
             const hostTenantSlug = resolveTenantSlug(request.headers);
             if (hostTenantSlug) {
                 dto.tenantId = hostTenantSlug;
             }
 
-            const session = await this.authService.login(dto);
-            this.setRefreshTokenCookie(response, session);
+            // 1. Authenticate user's credentials
+            const principal = await this.authService.authenticateCredentials(dto);
 
-            response.status(200).json(AuthResponseMapper.toLoginResponseDto(session));
+            // 2. Check if captcha was already verified via cookie (Login page re-submission after /challenge)
+            let captchaAlreadyVerified = false;
+            if (this.captchaService) {
+                let captchaVerifiedToken = (request as any).cookies?.captcha_verified_token as string | undefined;
+                if (!captchaVerifiedToken) {
+                    const cookieHeader = request.headers.cookie;
+                    if (cookieHeader) {
+                        const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                            const [name, val] = c.split('=').map(x => x.trim());
+                            if (name) acc[name] = val;
+                            return acc;
+                        }, {} as Record<string, string>);
+                        captchaVerifiedToken = cookies['captcha_verified_token'];
+                    }
+                }
+                if (captchaVerifiedToken) {
+                    captchaAlreadyVerified = await this.captchaService.consumeToken(captchaVerifiedToken);
+                    if (captchaAlreadyVerified) {
+                        response.clearCookie('captcha_verified_token');
+                    }
+                }
+            }
+
+            // 3. Determine next verification steps
+            let needsCaptcha = false;
+            if (!captchaAlreadyVerified && this.captchaValidator) {
+                const isBypassed = await this.captchaValidator.validate('', dto.ipAddress);
+                needsCaptcha = !isBypassed;
+            }
+
+            // 4. Generate short-lived master login state token
+            const loginStateToken = crypto.randomUUID();
+            const loginStateData = {
+                userId: principal.userId,
+                identifier: principal.identifier,
+                rememberMe: dto.rememberMe,
+                roles: principal.roles,
+                tenantId: principal.tenantId,
+                branchId: principal.branchId,
+                tokenVersion: principal.tokenVersion,
+                captchaVerified: !needsCaptcha
+            };
+            await this.saveLoginState(loginStateToken, loginStateData);
+
+            // Set cookie: HttpOnly, secure in prod, maxAge = 5 minutes
+            const isProd = process.env.NODE_ENV === 'production';
+            response.cookie('login_state_token', loginStateToken, {
+                httpOnly: true,
+                secure: isProd,
+                sameSite: 'lax',
+                maxAge: 5 * 60 * 1000
+            });
+
+            if (needsCaptcha) {
+                response.status(401).json({ message: 'CAPTCHA required' });
+                return;
+            }
+
+            // Check if OTP is required
+            const user = await this.authService.dependencies.authDao.findByIdentifier(dto.identifier);
+            if (user && user.phoneNumber) {
+                response.status(401).json({
+                    message: 'OTP required',
+                    phoneNumber: user.phoneNumber,
+                    email: dto.identifier
+                });
+                return;
+            }
+
+
+            // If neither is required, finalize session immediately
+            const session = await this.authService.issueSession({
+                userId: principal.userId,
+                roles: principal.roles,
+                tenantId: principal.tenantId,
+                branchId: principal.branchId,
+                tokenVersion: principal.tokenVersion,
+            }, dto.rememberMe);
+
+            // Clean up temporary login state
+            await this.deleteLoginState(loginStateToken);
+            response.clearCookie('login_state_token');
+
+            this.setRefreshTokenCookie(response, session);
+            response.status(200).json(AuthResponseMapper.toLoginResponseDto({
+                sessionId: session.sessionId,
+                refreshToken: session.refreshToken,
+                accessToken: session.accessToken,
+                userId: session.accessContext.userId,
+                roles: session.accessContext.roles,
+                tenantId: session.accessContext.tenantId,
+                branchId: session.accessContext.branchId,
+                rememberMe: session.rememberMe,
+            }));
+
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            if (message === 'OTP required') {
-                const phoneNumber = (error as any).phoneNumber || '';
-                const mfaToken = (error as any).mfaToken || '';
-                response.status(400).json({ message: 'OTP required', mfaToken, phoneNumber });
-                return;
-            }
-            if (message === 'CAPTCHA required') {
-                response.status(400).json({ message: 'CAPTCHA required' });
-                return;
-            }
             let status = 400;
             if (message.includes('Invalid credentials')) {
                 status = 401;
@@ -72,7 +193,6 @@ export class AuthController {
             } else if (message.includes('locked')) {
                 status = 403;
             }
-
             response.status(status).json({ message });
         }
     }
@@ -216,14 +336,49 @@ export class AuthController {
     // POST /auth/otp/generate
     public async generateOtp(request: Request, response: Response): Promise<void> {
         try {
-            const { email, phoneNumber, captchaToken } = request.body;
+            const { email, phoneNumber, captchaToken, mfaToken, unlockToken } = request.body;
 
-            // 1. Google reCAPTCHA validation
-            const ip = request.ip || request.socket?.remoteAddress;
-            const isValidCaptcha = await this.googleCaptchaValidator.validate(captchaToken || '', ip);
-            if (!isValidCaptcha) {
-                response.status(400).json({ message: 'Invalid CAPTCHA token' });
-                return;
+            // Session-based trust bypass: skip CAPTCHA if valid loginStateToken, mfaToken or unlockToken is present
+            let skipCaptcha = false;
+            let loginStateToken = (request as any).cookies?.login_state_token;
+            if (!loginStateToken) {
+                const cookieHeader = request.headers.cookie;
+                if (cookieHeader) {
+                    const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                        const [name, val] = c.split('=').map(x => x.trim());
+                        if (name) acc[name] = val;
+                        return acc;
+                    }, {} as Record<string, string>);
+                    loginStateToken = cookies['login_state_token'];
+                }
+            }
+
+            if (loginStateToken) {
+                const loginState = await this.getLoginState(loginStateToken);
+                if (loginState) {
+                    skipCaptcha = true;
+                }
+            } else if (mfaToken) {
+                const tx = await this.mfaTransactionStore.getTransaction(mfaToken);
+                if (tx) {
+                    skipCaptcha = true;
+                }
+            } else if (unlockToken) {
+                const user = typeof this.authService.dependencies.authDao.getUserByUnlockToken === 'function'
+                    ? await this.authService.dependencies.authDao.getUserByUnlockToken(unlockToken)
+                    : null;
+                if (user && (!user.unlockTokenExpiresAt || user.unlockTokenExpiresAt.getTime() >= Date.now())) {
+                    skipCaptcha = true;
+                }
+            }
+
+            if (!skipCaptcha) {
+                const ip = request.ip || request.socket?.remoteAddress;
+                const isValidCaptcha = await this.captchaValidator.validate(captchaToken || '', ip);
+                if (!isValidCaptcha) {
+                    response.status(400).json({ message: 'Invalid CAPTCHA token' });
+                    return;
+                }
             }
 
             // Resolve tenant and branch context if present
@@ -260,7 +415,7 @@ export class AuthController {
     // POST /auth/otp/validate
     public async validateOtp(request: Request, response: Response): Promise<void> {
         try {
-            const { otp, mfaToken, unlockToken } = request.body;
+            const { otp, unlockToken } = request.body;
 
             // Extract token from cookie (checking both cookies object and raw header fallback)
             let token = (request as any).cookies?.otp_token;
@@ -291,24 +446,201 @@ export class AuthController {
                 return;
             }
 
-            const isValid = await this.otpService.validateOtp(token, otp);
+            const verifiedToken = await this.otpService.validateOtpAndStore(token, otp);
 
             // Clear the cookie immediately
             if (typeof response.clearCookie === 'function') {
                 response.clearCookie('otp_token');
             }
 
-            if (isValid) {
-                if (mfaToken) {
-                    await this.mfaTransactionStore.markVerified(mfaToken);
-                }
+            if (verifiedToken) {
                 if (unlockToken) {
                     await this.authService.unlockAccount(unlockToken);
                 }
-                response.status(200).json({ message: 'OTP verified successfully.' });
+
+                // Set cookie: HttpOnly, secure in prod, maxAge = 5 minutes
+                const isProd = process.env.NODE_ENV === 'production';
+                response.cookie('otp_verified_token', verifiedToken, {
+                    httpOnly: true,
+                    secure: isProd,
+                    sameSite: 'lax',
+                    maxAge: 5 * 60 * 1000
+                });
+
+                response.status(200).json({
+                    message: 'OTP verified successfully.',
+                    token: verifiedToken
+                });
             } else {
                 response.status(400).json({ message: 'Invalid or expired OTP.' });
             }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            response.status(400).json({ message });
+        }
+    }
+
+    // POST /auth/captcha/validate
+    public async validateCaptcha(request: Request, response: Response): Promise<void> {
+        try {
+            const { captchaToken } = request.body;
+            const ip = request.ip || request.socket?.remoteAddress;
+
+            if (!this.captchaService) {
+                response.status(500).json({ message: 'Captcha Service not configured.' });
+                return;
+            }
+
+            const token = await this.captchaService.validateAndStore(captchaToken || '', ip);
+            if (!token) {
+                response.status(400).json({ message: 'Invalid CAPTCHA token' });
+                return;
+            }
+
+            const isProd = process.env.NODE_ENV === 'production';
+            response.cookie('captcha_verified_token', token, {
+                httpOnly: true,
+                secure: isProd,
+                sameSite: 'lax',
+                maxAge: 5 * 60 * 1000
+            });
+
+            response.status(200).json({
+                message: 'CAPTCHA verified successfully.',
+                token
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            response.status(400).json({ message });
+        }
+    }
+
+    // POST /auth/login/complete
+    public async completeLogin(request: Request, response: Response): Promise<void> {
+        try {
+            // 1. Extract and validate master login state token
+            let loginStateToken = (request as any).cookies?.login_state_token;
+            if (!loginStateToken) {
+                const cookieHeader = request.headers.cookie;
+                if (cookieHeader) {
+                    const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                        const [name, val] = c.split('=').map(x => x.trim());
+                        if (name) acc[name] = val;
+                        return acc;
+                    }, {} as Record<string, string>);
+                    loginStateToken = cookies['login_state_token'];
+                }
+            }
+
+            if (!loginStateToken) {
+                response.status(401).json({ message: 'Session expired. Please log in again.' });
+                return;
+            }
+
+            const loginState = await this.getLoginState(loginStateToken);
+            if (!loginState) {
+                response.status(401).json({ message: 'Session expired. Please log in again.' });
+                return;
+            }
+
+            // 2. Check CAPTCHA if enabled
+            let needsCaptcha = false;
+            if (!loginState.captchaVerified && this.captchaValidator) {
+                const ip = request.ip || request.socket?.remoteAddress;
+                const isBypassed = await this.captchaValidator.validate('', ip);
+                needsCaptcha = !isBypassed;
+            }
+
+            if (needsCaptcha) {
+                let captchaVerifiedToken = (request as any).cookies?.captcha_verified_token;
+                if (!captchaVerifiedToken) {
+                    const cookieHeader = request.headers.cookie;
+                    if (cookieHeader) {
+                        const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                            const [name, val] = c.split('=').map(x => x.trim());
+                            if (name) acc[name] = val;
+                            return acc;
+                        }, {} as Record<string, string>);
+                        captchaVerifiedToken = cookies['captcha_verified_token'];
+                    }
+                }
+
+                if (!captchaVerifiedToken) {
+                    response.status(401).json({ message: 'CAPTCHA verification required.' });
+                    return;
+                }
+
+                if (!this.captchaService) {
+                    response.status(500).json({ message: 'Captcha Service not configured.' });
+                    return;
+                }
+
+                const isCaptchaValid = await this.captchaService.consumeToken(captchaVerifiedToken);
+                if (!isCaptchaValid) {
+                    response.status(401).json({ message: 'CAPTCHA verification invalid or expired.' });
+                    return;
+                }
+            }
+
+            // 3. Check OTP if required
+            const user = await this.authService.dependencies.authDao.findByIdentifier(loginState.identifier);
+            const needsOtp = user && !!user.phoneNumber;
+
+            if (needsOtp) {
+                let otpVerifiedToken = (request as any).cookies?.otp_verified_token;
+                if (!otpVerifiedToken) {
+                    const cookieHeader = request.headers.cookie;
+                    if (cookieHeader) {
+                        const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                            const [name, val] = c.split('=').map(x => x.trim());
+                            if (name) acc[name] = val;
+                            return acc;
+                        }, {} as Record<string, string>);
+                        otpVerifiedToken = cookies['otp_verified_token'];
+                    }
+                }
+
+                if (!otpVerifiedToken) {
+                    response.status(401).json({ message: 'OTP verification required.' });
+                    return;
+                }
+
+                const isOtpValid = await this.otpService.consumeOtpToken(otpVerifiedToken);
+                if (!isOtpValid) {
+                    response.status(401).json({ message: 'OTP verification invalid or expired.' });
+                    return;
+                }
+            }
+
+            // 4. Issue session and cleanup
+            const session = await this.authService.issueSession({
+                userId: loginState.userId,
+                roles: loginState.roles,
+                tenantId: loginState.tenantId,
+                branchId: loginState.branchId,
+                tokenVersion: loginState.tokenVersion,
+            }, loginState.rememberMe);
+
+            // Cleanup
+            await this.deleteLoginState(loginStateToken);
+            if (typeof response.clearCookie === 'function') {
+                response.clearCookie('login_state_token');
+                response.clearCookie('captcha_verified_token');
+                response.clearCookie('otp_verified_token');
+            }
+
+            this.setRefreshTokenCookie(response, session);
+            response.status(200).json(AuthResponseMapper.toLoginResponseDto({
+                sessionId: session.sessionId,
+                refreshToken: session.refreshToken,
+                accessToken: session.accessToken,
+                userId: session.accessContext.userId,
+                roles: session.accessContext.roles,
+                tenantId: session.accessContext.tenantId,
+                branchId: session.accessContext.branchId,
+                rememberMe: session.rememberMe,
+            }));
+
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             response.status(400).json({ message });

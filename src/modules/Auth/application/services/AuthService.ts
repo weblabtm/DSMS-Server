@@ -50,23 +50,10 @@ export class AuthService {
         this.permissionGuard = dependencies.permissionGuard ?? new PermissionGuard();
     }
 
-    public async login(credentials: AuthLoginRequestDto): Promise<AuthSessionResponseDto> {
-        const { bruteForceService, captchaValidator, emailService } = this.dependencies;
+    public async authenticateCredentials(credentials: AuthLoginRequestDto): Promise<{ userId: string; roles: readonly RoleName[]; tenantId?: string; branchId?: string; tokenVersion?: number; identifier: string }> {
+        const { bruteForceService, emailService } = this.dependencies;
 
-        // 1. CAPTCHA validation
-        if (captchaValidator) {
-            const token = credentials.captchaToken || '';
-            const isValidCaptcha = await captchaValidator.validate(token, credentials.ipAddress);
-            if (!isValidCaptcha) {
-                if (!token) {
-                    throw new Error('CAPTCHA required');
-                } else {
-                    throw new Error('Invalid CAPTCHA token');
-                }
-            }
-        }
-
-        // 2. IP Rate limit check
+        // 1. IP Rate limit check
         if (bruteForceService && credentials.ipAddress) {
             const isBlocked = await bruteForceService.isIpBlocked(credentials.ipAddress);
             if (isBlocked) {
@@ -74,7 +61,7 @@ export class AuthService {
             }
         }
 
-        // 3. Database Account lockout check
+        // 2. Database Account lockout check
         const lockStatus = typeof this.dependencies.authDao.getUserLockStatus === 'function'
             ? await this.dependencies.authDao.getUserLockStatus(credentials.identifier)
             : null;
@@ -112,7 +99,7 @@ export class AuthService {
             }
         }
 
-        // 4. Authenticate credentials
+        // 3. Authenticate credentials
         const principal = await this.dependencies.authDao.authenticate(credentials);
 
         if (!principal) {
@@ -170,6 +157,52 @@ export class AuthService {
             throw new Error('Invalid credentials');
         }
 
+        // Success resets brute-force failure counters
+        if (bruteForceService) {
+            const ip = credentials.ipAddress || 'unknown';
+            await bruteForceService.registerSuccess(ip, credentials.identifier);
+            if (typeof this.dependencies.authDao.resetLockoutCount === 'function') {
+                await this.dependencies.authDao.resetLockoutCount(credentials.identifier);
+            }
+        }
+
+        return {
+            userId: principal.userId,
+            roles: principal.roles,
+            tenantId: principal.tenantId,
+            branchId: principal.branchId,
+            tokenVersion: principal.tokenVersion,
+            identifier: credentials.identifier
+        };
+    }
+
+    public async login(credentials: AuthLoginRequestDto): Promise<AuthSessionResponseDto> {
+        const { captchaValidator, mfaTransactionStore } = this.dependencies;
+
+        // Session-based trust bypass: skip CAPTCHA if valid verified mfaToken is present
+        let skipCaptcha = false;
+        if (credentials.mfaToken && mfaTransactionStore) {
+            const isVerified = await mfaTransactionStore.isVerified(credentials.mfaToken);
+            if (isVerified) {
+                skipCaptcha = true;
+            }
+        }
+
+        // 1. CAPTCHA validation
+        if (captchaValidator && !skipCaptcha) {
+            const token = credentials.captchaToken || '';
+            const isValidCaptcha = await captchaValidator.validate(token, credentials.ipAddress);
+            if (!isValidCaptcha) {
+                if (!token) {
+                    throw new Error('CAPTCHA required');
+                } else {
+                    throw new Error('Invalid CAPTCHA token');
+                }
+            }
+        }
+
+        const principal = await this.authenticateCredentials(credentials);
+
         // Check if user requires OTP (MFA)
         const user = await this.dependencies.authDao.findByIdentifier(credentials.identifier);
         if (user && user.phoneNumber) {
@@ -179,6 +212,14 @@ export class AuthService {
             }
 
             if (credentials.mfaToken) {
+                const tx = await mfaStore.getTransaction(credentials.mfaToken);
+                if (!tx) {
+                    throw new Error('MFA verification required');
+                }
+                if (tx.userId !== principal.userId) {
+                    throw new Error('MFA transaction mismatch');
+                }
+
                 const isVerified = await mfaStore.isVerified(credentials.mfaToken);
                 if (!isVerified) {
                     throw new Error('MFA verification required');
@@ -192,15 +233,6 @@ export class AuthService {
                 (otpError as any).mfaToken = mfaToken;
                 (otpError as any).phoneNumber = user.phoneNumber;
                 throw otpError;
-            }
-        }
-
-        // 5. Success resets brute-force failure counters
-        if (bruteForceService) {
-            const ip = credentials.ipAddress || 'unknown';
-            await bruteForceService.registerSuccess(ip, credentials.identifier);
-            if (typeof this.dependencies.authDao.resetLockoutCount === 'function') {
-                await this.dependencies.authDao.resetLockoutCount(credentials.identifier);
             }
         }
 

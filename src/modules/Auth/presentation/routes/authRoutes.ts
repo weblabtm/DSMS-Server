@@ -15,6 +15,9 @@ export const createAuthRouter = (
     // POST /auth/login
     router.post('/login', controller.login.bind(controller));
 
+    // POST /auth/login/complete
+    router.post('/login/complete', controller.completeLogin.bind(controller));
+
     // GET /auth/unlock
     router.get('/unlock', controller.unlock.bind(controller));
 
@@ -26,6 +29,9 @@ export const createAuthRouter = (
 
     // POST /auth/logout
     router.post('/logout', controller.logout.bind(controller));
+
+    // POST /auth/captcha/validate
+    router.post('/captcha/validate', controller.validateCaptcha.bind(controller));
 
     // POST /auth/otp/generate
     router.post('/otp/generate', otpRateLimiter, controller.generateOtp.bind(controller));
