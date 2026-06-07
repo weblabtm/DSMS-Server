@@ -46,7 +46,7 @@ export type AuthServiceDependencies = {
 export class AuthService {
     private readonly permissionGuard: PermissionGuard;
 
-    public constructor(private readonly dependencies: AuthServiceDependencies) {
+    public constructor(public readonly dependencies: AuthServiceDependencies) {
         this.permissionGuard = dependencies.permissionGuard ?? new PermissionGuard();
     }
 
