@@ -12,6 +12,7 @@ export async function bootstrapSuperAdmin(prisma: PrismaClient, env: NodeJS.Proc
 
     const identifier = String(env.SUPER_ADMIN_IDENTIFIER ?? '').trim();
     const password = String(env.SUPER_ADMIN_PASSWORD ?? '');
+    const phoneNumber = String(env.SUPER_ADMIN_PHONE_NUMBER ?? '0763080469').trim();
 
     if (!identifier || !password) {
         throw new Error('SUPER_ADMIN_IDENTIFIER and SUPER_ADMIN_PASSWORD are required when ENABLE_SUPER_ADMIN_BOOTSTRAP=true');
@@ -23,12 +24,12 @@ export async function bootstrapSuperAdmin(prisma: PrismaClient, env: NodeJS.Proc
         const roles: string[] = existing.roles ?? [];
 
         if (roles.includes('Super Admin')) {
-            if (!existing.phoneNumber) {
+            if (!existing.phoneNumber || existing.phoneNumber !== phoneNumber) {
                 await (prisma as any).authUser.update({
                     where: { identifier },
-                    data: { phoneNumber: '+94712345678' }
+                    data: { phoneNumber }
                 });
-                console.log(`Updated Super Admin with test phone number: +94712345678`);
+                console.log(`Updated Super Admin with phone number: ${phoneNumber}`);
             }
             console.log(`Super Admin already exists for identifier: ${identifier}`);
             return;
@@ -44,7 +45,7 @@ export async function bootstrapSuperAdmin(prisma: PrismaClient, env: NodeJS.Proc
             identifier,
             password: hashedPassword,
             roles: ['Super Admin'],
-            phoneNumber: '+94712345678',
+            phoneNumber,
         },
     });
 
