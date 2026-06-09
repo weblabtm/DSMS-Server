@@ -29,4 +29,5 @@ Manages tenant identity, tenant boundaries, plans, and tenant-scoped operations.
 	- `prisma/` — module Prisma models for tenant metadata
 
 - **Guidance:** Enforce isolation on queries and use tenant-aware middleware for requests.
+- **Routing:** The HTTP layer resolves the tenant from the request hostname and stores the resulting tenant context on the request object. The public `/config` endpoint returns the tenant-aware API base URL for clients that need to hydrate runtime config.
 

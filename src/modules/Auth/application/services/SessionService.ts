@@ -20,9 +20,16 @@ export type SessionRecord = {
     accessTokenJti?: string;
     // optional stored hash of the refresh token for persistent stores
     refreshTokenHash?: string;
+    previousTokenHash?: string;
     createdAt: number;
     expiresAt: number;
     revokedAt?: number;
+    previousRefreshToken?: string;
+    rotatedAt?: number;
+    rememberMe?: boolean;
+    deviceFingerprint?: string;
+    deviceOs?: string;
+    devicePlatform?: string;
 };
 
 export type CreateSessionInput = {
@@ -31,6 +38,10 @@ export type CreateSessionInput = {
     tenantId?: string;
     branchId?: string;
     tokenVersion?: number;
+    rememberMe?: boolean;
+    deviceFingerprint?: string;
+    deviceOs?: string;
+    devicePlatform?: string;
 };
 
 export type CreateSessionWithAccessJtiInput = CreateSessionInput & {
@@ -57,6 +68,7 @@ export class SessionService {
     }
 
     public async createSession(input: CreateSessionInput): Promise<SessionRecord> {
+        const ttl = input.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
         const session: SessionRecord = {
             sessionId: randomUUID(),
             userId: input.userId,
@@ -67,7 +79,11 @@ export class SessionService {
             refreshToken: randomUUID(),
             refreshTokenHash: this.hashToken(randomUUID()),
             createdAt: this.clock(),
-            expiresAt: this.clock() + this.refreshTokenTtlSeconds,
+            expiresAt: this.clock() + ttl,
+            rememberMe: input.rememberMe ?? false,
+            deviceFingerprint: input.deviceFingerprint,
+            deviceOs: input.deviceOs,
+            devicePlatform: input.devicePlatform,
         };
 
         this.sessionsById.set(session.sessionId, session);
@@ -78,6 +94,7 @@ export class SessionService {
 
     public async createSessionWithAccessJti(input: CreateSessionWithAccessJtiInput): Promise<SessionRecord> {
         const refreshToken = randomUUID();
+        const ttl = input.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
         const session: SessionRecord = {
             sessionId: randomUUID(),
             userId: input.userId,
@@ -89,7 +106,11 @@ export class SessionService {
             refreshTokenHash: this.hashToken(refreshToken),
             accessTokenJti: input.accessTokenJti,
             createdAt: this.clock(),
-            expiresAt: this.clock() + this.refreshTokenTtlSeconds,
+            expiresAt: this.clock() + ttl,
+            rememberMe: input.rememberMe ?? false,
+            deviceFingerprint: input.deviceFingerprint,
+            deviceOs: input.deviceOs,
+            devicePlatform: input.devicePlatform,
         };
 
         this.sessionsById.set(session.sessionId, session);
@@ -115,7 +136,16 @@ export class SessionService {
     }
 
     public async rotateRefreshToken(refreshToken: string): Promise<SessionRecord> {
-        const currentSession = await this.findByRefreshToken(refreshToken);
+        // Look up by current refresh token or previous refresh token directly in Sessions list
+        let currentSession: SessionRecord | undefined;
+        for (const session of this.sessionsById.values()) {
+            if (session.refreshToken === refreshToken || session.previousRefreshToken === refreshToken) {
+                if (!session.revokedAt && session.expiresAt > this.clock()) {
+                    currentSession = session;
+                    break;
+                }
+            }
+        }
 
         if (!currentSession) {
             throw new Error('Refresh token is not active');
@@ -127,15 +157,45 @@ export class SessionService {
             throw new Error('Session not found');
         }
 
+        const now = this.clock();
+
+        // Check if token being rotated is the previous refresh token
+        if (existingRecord.refreshToken !== refreshToken) {
+            if (existingRecord.previousRefreshToken === refreshToken) {
+                // Replay attack check
+                const rotatedAt = existingRecord.rotatedAt ?? 0;
+                const GRACE_PERIOD_SECONDS = 15;
+
+                if (now - rotatedAt > GRACE_PERIOD_SECONDS) {
+                    // Revoke entire session on replay outside grace period
+                    await this.revokeSession(existingRecord.sessionId);
+                    throw new Error('Refresh token is not active');
+                }
+                
+                // Within grace period: return the existing record with the already rotated new token
+                return { ...existingRecord };
+            } else {
+                throw new Error('Refresh token is not active');
+            }
+        }
+
+        // Standard rotation flow
+        if (existingRecord.previousRefreshToken) {
+            this.sessionIdsByRefreshToken.delete(existingRecord.previousRefreshToken);
+        }
         this.sessionIdsByRefreshToken.delete(refreshToken);
 
         const newRefresh = randomUUID();
+        const ttl = existingRecord.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
         const rotatedSession: SessionRecord = {
             ...existingRecord,
             refreshToken: newRefresh,
             refreshTokenHash: this.hashToken(newRefresh),
+            previousTokenHash: this.hashToken(refreshToken),
+            previousRefreshToken: refreshToken,
+            rotatedAt: now,
             createdAt: existingRecord.createdAt,
-            expiresAt: this.clock() + this.refreshTokenTtlSeconds,
+            expiresAt: now + ttl,
         };
 
         this.sessionsById.set(rotatedSession.sessionId, rotatedSession);
@@ -166,6 +226,16 @@ export class SessionService {
             ...session,
             revokedAt: this.clock(),
         });
+    }
+
+    public async getActiveSessionsForUser(userId: string): Promise<SessionRecord[]> {
+        const result: SessionRecord[] = [];
+        for (const session of this.sessionsById.values()) {
+            if (session.userId === userId && !session.revokedAt && session.expiresAt > this.clock()) {
+                result.push({ ...session });
+            }
+        }
+        return result.sort((a, b) => b.createdAt - a.createdAt);
     }
 
     private hashToken(token: string): string {

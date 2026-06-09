@@ -4,11 +4,20 @@ model AuthUser {
   id         String   @id @default(cuid())
   identifier String   @unique
   password   String
+  phoneNumber String?
   tenantId   String?
   branchId   String?
   roles      String[] @default([])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isLocked             Boolean   @default(false)
+  lockedAt             DateTime?
+  unlockToken          String?   @unique
+  unlockTokenExpiresAt DateTime?
+  lockoutCount         Int       @default(0)
+  reminder1hSent       Boolean   @default(false)
+  reminder30mSent      Boolean   @default(false)
+  reminder10mSent      Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([tenantId, branchId])
 }

@@ -1,7 +1,19 @@
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  slug            String?   @unique
+  isActive        Boolean   @default(true)
+
+  // Branding
+  logoUrl         String?
+  primaryColor    String?
+  secondaryColor  String?
+  faviconUrl      String?
+
+  // Plan
+  planTier        PlanTier  @default(BASIC)
+  planExpiresAt   DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }

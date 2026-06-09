@@ -76,6 +76,18 @@ class ServerBootstrap {
     }
 
     private async stop(): Promise<void> {
+        if (this.application.locals.cronScheduler) {
+            this.application.locals.cronScheduler.stopAll();
+        }
+
+        if (this.application.locals.smsRetryWorker) {
+            this.application.locals.smsRetryWorker.stop();
+        }
+
+        if (this.application.locals.emailRetryWorker) {
+            this.application.locals.emailRetryWorker.stop();
+        }
+
         await new Promise<void>((resolve, reject) => {
             if (!this.httpServer) {
                 resolve();
@@ -123,7 +135,7 @@ const dependencyHealthProvider: DependencyHealthProvider = async () => {
     };
 };
 
-const appInstance = new ServerApplication(environment, databaseConnection.getClient());
+const appInstance = new ServerApplication(environment, databaseConnection.getClient(), redisConnection);
 
 appInstance.getApp().locals.dependencyHealthProvider = dependencyHealthProvider;
 appInstance.getApp().locals.storageService = storageService;

@@ -1,0 +1,8 @@
+model Otp {
+  token     String   @id
+  otpHash   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}

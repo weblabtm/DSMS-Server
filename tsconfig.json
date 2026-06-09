@@ -8,17 +8,15 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
       "@modules/*": [
-        "src/modules/*"
+        "./src/modules/*"
       ],
       "@shared/*": [
-        "src/shared/*"
+        "./src/shared/*"
       ],
       "@config/*": [
-        "src/config/*"
+        "./src/config/*"
       ]
     }
   },

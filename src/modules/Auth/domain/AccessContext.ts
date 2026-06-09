@@ -10,6 +10,7 @@ export type AccessContextInput = {
     tenantId?: string;
     branchId?: string;
     tokenVersion?: number;
+    accessTokenJti?: string;
 };
 
 export type ResourceScope = {
@@ -29,12 +30,15 @@ export class AccessContext {
 
     public readonly tokenVersion: number;
 
+    public readonly accessTokenJti?: string;
+
     public constructor(input: AccessContextInput) {
         this.userId = input.userId;
         this.roles = [...input.roles];
         this.tenantId = input.tenantId;
         this.branchId = input.branchId;
         this.tokenVersion = input.tokenVersion ?? 0;
+        this.accessTokenJti = input.accessTokenJti;
     }
 
     public hasRole(roleName: RoleName): boolean {

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ dev, main, master ]
+    branches: [ dev, main, master, local ]
   pull_request:
-    branches: [ dev, main, master ]
+    branches: [ dev, main, master, local ]
 
 jobs:
   test:
@@ -81,7 +81,7 @@ jobs:
           if [ -f dist/scripts/seed-rbac.js ]; then
             node dist/scripts/seed-rbac.js
           else
-            npx tsx src/scripts/seed-rbac.ts
+            npx tsx scripts/seed-rbac.ts
           fi
 
       - name: Bootstrap Super Admin to Supabase (optional)
@@ -94,7 +94,7 @@ jobs:
           if [ -f dist/scripts/bootstrap-super-admin.js ]; then
             node dist/scripts/bootstrap-super-admin.js
           else
-            npx tsx src/scripts/bootstrap-super-admin.ts
+            npx tsx scripts/bootstrap-super-admin.ts
           fi
 
       - name: Apply migrations to integration DB
@@ -114,7 +114,7 @@ jobs:
           if [ -f dist/scripts/seed-rbac.js ]; then
             node dist/scripts/seed-rbac.js
           else
-            npx tsx src/scripts/seed-rbac.ts
+            npx tsx scripts/seed-rbac.ts
           fi
 
       - name: Run unit tests

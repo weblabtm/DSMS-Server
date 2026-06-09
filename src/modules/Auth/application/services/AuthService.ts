@@ -9,6 +9,10 @@ import { type AuthLoginRequestDto, type AuthLogoutRequestDto, type AuthRefreshRe
 import { PermissionGuard } from '../PermissionGuard.js';
 import type { SessionRecord, CreateSessionInput, CreateSessionWithAccessJtiInput } from './SessionService.js';
 import { TokenService, type AccessTokenClaims } from './TokenService.js';
+import type { BruteForceProtectionService } from './BruteForceProtectionService.js';
+import type { ICaptchaValidator } from './ICaptchaValidator.js';
+import { type IMfaTransactionStore } from './IMfaTransactionStore.js';
+import crypto from 'crypto';
 
 export type AuthSessionBundle = {
     sessionId: string;
@@ -16,6 +20,7 @@ export type AuthSessionBundle = {
     accessToken: string;
     claims: AccessTokenClaims;
     accessContext: AccessContext;
+    rememberMe?: boolean;
 };
 
 export type AuthServiceDependencies = {
@@ -30,20 +35,205 @@ export type AuthServiceDependencies = {
     };
     authDao: AuthDao;
     permissionGuard?: PermissionGuard;
+    bruteForceService?: BruteForceProtectionService;
+    captchaValidator?: ICaptchaValidator;
+    emailService?: {
+        queueEmail(to: string, subject: string, body: string, tenantId?: string, branchId?: string): Promise<any>;
+    };
+    mfaTransactionStore?: IMfaTransactionStore;
 };
 
 export class AuthService {
     private readonly permissionGuard: PermissionGuard;
 
-    public constructor(private readonly dependencies: AuthServiceDependencies) {
+    public constructor(public readonly dependencies: AuthServiceDependencies) {
         this.permissionGuard = dependencies.permissionGuard ?? new PermissionGuard();
     }
 
-    public async login(credentials: AuthLoginRequestDto): Promise<AuthSessionResponseDto> {
+    public async authenticateCredentials(credentials: AuthLoginRequestDto): Promise<{ userId: string; roles: readonly RoleName[]; tenantId?: string; branchId?: string; tokenVersion?: number; identifier: string }> {
+        const { bruteForceService, emailService } = this.dependencies;
+
+        // 1. IP Rate limit check
+        if (bruteForceService && credentials.ipAddress) {
+            const isBlocked = await bruteForceService.isIpBlocked(credentials.ipAddress);
+            if (isBlocked) {
+                throw new Error('Too many login attempts. Please try again later.');
+            }
+        }
+
+        // 2. Database Account lockout check
+        const lockStatus = typeof this.dependencies.authDao.getUserLockStatus === 'function'
+            ? await this.dependencies.authDao.getUserLockStatus(credentials.identifier)
+            : null;
+
+        if (lockStatus && lockStatus.isLocked) {
+            if (lockStatus.unlockToken === null) {
+                // Temporary lockout countdown validation and auto-unlock
+                if (lockStatus.unlockTokenExpiresAt) {
+                    const expiresAt = lockStatus.unlockTokenExpiresAt.getTime();
+                    const now = Date.now();
+                    if (now >= expiresAt) {
+                        // Expired, automatically unlock
+                        await this.dependencies.authDao.unlockAccountAutomatically(credentials.identifier);
+                        if (bruteForceService) {
+                            const ip = credentials.ipAddress || 'unknown';
+                            await bruteForceService.registerSuccess(ip, credentials.identifier);
+                        }
+                    } else {
+                        const diffMs = expiresAt - now;
+                        const minutes = Math.floor(diffMs / 60000);
+                        const seconds = Math.floor((diffMs % 60000) / 1000);
+                        throw new Error(`Your account has been locked. Try again in ${minutes} minutes ${seconds} seconds.`);
+                    }
+                } else {
+                    throw new Error('Your account has been locked.');
+                }
+            } else {
+                throw new Error('Account is locked. Please check your email to unlock it.');
+            }
+        } else {
+            // Fallback for compatibility
+            const isLocked = await this.dependencies.authDao.isAccountLocked(credentials.identifier);
+            if (isLocked) {
+                throw new Error('Account is locked. Please check your email to unlock it.');
+            }
+        }
+
+        // 3. Authenticate credentials
         const principal = await this.dependencies.authDao.authenticate(credentials);
 
         if (!principal) {
+            // Register failed attempt
+            if (bruteForceService) {
+                const ip = credentials.ipAddress || 'unknown';
+                const { accountLocked, accountFailures } = await bruteForceService.registerFailure(ip, credentials.identifier);
+
+                if (accountLocked) {
+                    const currentLockoutCount = lockStatus ? lockStatus.lockoutCount : 0;
+                    if (currentLockoutCount === 0) {
+                        // First Lockout (Temporary, 15 minutes)
+                        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+                        if (typeof this.dependencies.authDao.lockAccountTemporarily === 'function') {
+                            await this.dependencies.authDao.lockAccountTemporarily(credentials.identifier, expiresAt);
+                            await this.dependencies.authDao.incrementLockoutCount(credentials.identifier);
+                        }
+                        throw new Error('Your account has been locked. Try again in 15 minutes 0 seconds.');
+                    } else {
+                        // Second Lockout (Permanent, generate unlock token)
+                        const token = crypto.randomBytes(32).toString('hex');
+                        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours expiration
+                        if (typeof this.dependencies.authDao.lockAccountPermanently === 'function') {
+                            await this.dependencies.authDao.lockAccountPermanently(credentials.identifier, token, expiresAt);
+                            await this.dependencies.authDao.incrementLockoutCount(credentials.identifier);
+                        } else {
+                            // Fallback
+                            await this.dependencies.authDao.lockAccount(credentials.identifier, token, expiresAt);
+                        }
+
+                        // Send unlock email
+                        if (emailService) {
+                            const baseUrl = process.env.SMS_CALLBACK_BASE_URL || 'http://localhost:3000';
+                            const unlockLink = `${baseUrl}/auth/unlock?token=${token}`;
+                            await emailService.queueEmail(
+                                credentials.identifier,
+                                'Account Locked',
+                                `Your account has been locked due to too many failed login attempts. Click here to unlock it: ${unlockLink}`,
+                                credentials.tenantId,
+                                credentials.branchId
+                            );
+                        }
+
+                        throw new Error('Account is locked. Please check your email to unlock it.');
+                    }
+                } else {
+                    // Check warnings for 3 or fewer failed login attempts left (failures >= 2)
+                    if (accountFailures >= 2) {
+                        const attemptsLeft = 5 - accountFailures;
+                        throw new Error(`Invalid credentials. ${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'} left.`);
+                    }
+                }
+            }
+
             throw new Error('Invalid credentials');
+        }
+
+        // Success resets brute-force failure counters
+        if (bruteForceService) {
+            const ip = credentials.ipAddress || 'unknown';
+            await bruteForceService.registerSuccess(ip, credentials.identifier);
+            if (typeof this.dependencies.authDao.resetLockoutCount === 'function') {
+                await this.dependencies.authDao.resetLockoutCount(credentials.identifier);
+            }
+        }
+
+        return {
+            userId: principal.userId,
+            roles: principal.roles,
+            tenantId: principal.tenantId,
+            branchId: principal.branchId,
+            tokenVersion: principal.tokenVersion,
+            identifier: credentials.identifier
+        };
+    }
+
+    public async login(credentials: AuthLoginRequestDto): Promise<AuthSessionResponseDto> {
+        const { captchaValidator, mfaTransactionStore } = this.dependencies;
+
+        // Session-based trust bypass: skip CAPTCHA if valid verified mfaToken is present
+        let skipCaptcha = false;
+        if (credentials.mfaToken && mfaTransactionStore) {
+            const isVerified = await mfaTransactionStore.isVerified(credentials.mfaToken);
+            if (isVerified) {
+                skipCaptcha = true;
+            }
+        }
+
+        // 1. CAPTCHA validation
+        if (captchaValidator && !skipCaptcha) {
+            const token = credentials.captchaToken || '';
+            const isValidCaptcha = await captchaValidator.validate(token, credentials.ipAddress);
+            if (!isValidCaptcha) {
+                if (!token) {
+                    throw new Error('CAPTCHA required');
+                } else {
+                    throw new Error('Invalid CAPTCHA token');
+                }
+            }
+        }
+
+        const principal = await this.authenticateCredentials(credentials);
+
+        // Check if user requires OTP (MFA)
+        const user = await this.dependencies.authDao.findByIdentifier(credentials.identifier);
+        if (user && user.phoneNumber) {
+            const mfaStore = this.dependencies.mfaTransactionStore;
+            if (!mfaStore) {
+                throw new Error('MFA Transaction Store not configured');
+            }
+
+            if (credentials.mfaToken) {
+                const tx = await mfaStore.getTransaction(credentials.mfaToken);
+                if (!tx) {
+                    throw new Error('MFA verification required');
+                }
+                if (tx.userId !== principal.userId) {
+                    throw new Error('MFA transaction mismatch');
+                }
+
+                const isVerified = await mfaStore.isVerified(credentials.mfaToken);
+                if (!isVerified) {
+                    throw new Error('MFA verification required');
+                }
+                // Cleanup transaction
+                await mfaStore.deleteTransaction(credentials.mfaToken);
+            } else {
+                // Generate a short-lived transaction token
+                const mfaToken = await mfaStore.createTransaction(principal.userId, credentials.rememberMe);
+                const otpError = new Error('OTP required');
+                (otpError as any).mfaToken = mfaToken;
+                (otpError as any).phoneNumber = user.phoneNumber;
+                throw otpError;
+            }
         }
 
         return this.toSessionResponse(await this.issueSession({
@@ -52,16 +242,44 @@ export class AuthService {
             tenantId: principal.tenantId,
             branchId: principal.branchId,
             tokenVersion: principal.tokenVersion,
-        }));
+        }, credentials.rememberMe));
     }
 
-    public async issueSession(principal: {
-        userId: string;
-        roles: readonly RoleName[];
-        tenantId?: string;
-        branchId?: string;
-        tokenVersion?: number;
-    }): Promise<AuthSessionBundle> {
+    public async unlockAccount(token: string): Promise<boolean> {
+        const user = typeof this.dependencies.authDao.getUserByUnlockToken === 'function'
+            ? await this.dependencies.authDao.getUserByUnlockToken(token)
+            : null;
+
+        const unlocked = await this.dependencies.authDao.unlockAccountByToken(token);
+        if (unlocked && user) {
+            if (typeof this.dependencies.authDao.resetLockoutCount === 'function') {
+                await this.dependencies.authDao.resetLockoutCount(user.identifier);
+            }
+        }
+        return unlocked;
+    }
+
+    public async issueSession(
+        principal: {
+            userId: string;
+            roles: readonly RoleName[];
+            tenantId?: string;
+            branchId?: string;
+            tokenVersion?: number;
+            deviceFingerprint?: string;
+            deviceOs?: string;
+            devicePlatform?: string;
+        },
+        rememberMe?: boolean,
+        deviceDetails?: {
+            deviceFingerprint?: string;
+            deviceOs?: string;
+            devicePlatform?: string;
+            deviceId?: string;
+            deviceModel?: string;
+            deviceOsVersion?: string;
+        }
+    ): Promise<AuthSessionBundle> {
         const accessToken = this.dependencies.tokenService.issueAccessToken({
             subject: principal.userId,
             roles: principal.roles,
@@ -72,6 +290,11 @@ export class AuthService {
 
         const claims = this.dependencies.tokenService.verifyAccessToken(accessToken);
 
+        // Resolve device info: inline principal fields take priority over the legacy deviceDetails param
+        const resolvedFingerprint = principal.deviceFingerprint ?? deviceDetails?.deviceFingerprint;
+        const resolvedOs = principal.deviceOs ?? deviceDetails?.deviceOs;
+        const resolvedPlatform = principal.devicePlatform ?? deviceDetails?.devicePlatform;
+
         const session = await this.dependencies.sessionService.createSessionWithAccessJti({
             userId: principal.userId,
             roles: principal.roles,
@@ -79,7 +302,21 @@ export class AuthService {
             branchId: principal.branchId,
             tokenVersion: principal.tokenVersion,
             accessTokenJti: claims.jti,
+            rememberMe,
+            deviceFingerprint: resolvedFingerprint,
+            deviceOs: resolvedOs,
+            devicePlatform: resolvedPlatform,
         });
+
+        if (deviceDetails?.deviceId) {
+            await this.dependencies.authDao.syncDevice({
+                deviceId: deviceDetails.deviceId,
+                userId: principal.userId,
+                model: deviceDetails.deviceModel,
+                osVersion: deviceDetails.deviceOsVersion,
+                platform: resolvedPlatform,
+            });
+        }
 
         return {
             sessionId: session.sessionId,
@@ -92,7 +329,9 @@ export class AuthService {
                 tenantId: principal.tenantId,
                 branchId: principal.branchId,
                 tokenVersion: session.tokenVersion,
+                accessTokenJti: claims.jti,
             }),
+            rememberMe: session.rememberMe,
         };
     }
 
@@ -107,6 +346,8 @@ export class AuthService {
             if (targetRole !== 'Tenant Admin') {
                 throw new Error('Only Tenant Admin can self-register');
             }
+            // Explicitly clear tenantId for self-registering Tenant Admins (pending tenant creation)
+            account.tenantId = undefined;
         } else if (!this.canInviteRole(inviterRole, targetRole)) {
             throw new Error(`Role ${inviterRole} cannot create ${targetRole}`);
         }
@@ -122,16 +363,28 @@ export class AuthService {
         }));
     }
 
-    public logout(request: AuthLogoutRequestDto): void {
-        (async () => {
-            const session = await (this.dependencies.sessionService as any).findByRefreshToken(request.refreshToken);
+    public async logout(request: AuthLogoutRequestDto): Promise<void> {
+        const session = await (this.dependencies.sessionService as any).findByRefreshToken(request.refreshToken);
 
+        if (!session) {
+            return;
+        }
+
+        await (this.dependencies.sessionService as any).revokeSession(session.sessionId);
+    }
+
+    public async revokeSessionById(sessionId: string, requestingUserId: string): Promise<void> {
+        const sessionService = this.dependencies.sessionService as any;
+        if (typeof sessionService.findBySessionId === 'function') {
+            const session = await sessionService.findBySessionId(sessionId);
             if (!session) {
-                return;
+                throw new Error('Session not found.');
             }
-
-            await (this.dependencies.sessionService as any).revokeSession(session.sessionId);
-        })();
+            if (session.userId !== requestingUserId) {
+                throw new Error('Cannot revoke a session that does not belong to you.');
+            }
+        }
+        await (this.dependencies.sessionService as any).revokeSession(sessionId);
     }
 
     public async refreshSession(refreshToken: string): Promise<AuthSessionBundle> {
@@ -168,6 +421,7 @@ export class AuthService {
                 branchId: session.branchId,
                 tokenVersion: session.tokenVersion,
             }),
+            rememberMe: session.rememberMe,
         };
     }
 
@@ -199,6 +453,7 @@ export class AuthService {
             roles: bundle.accessContext.roles,
             ...(bundle.accessContext.tenantId ? { tenantId: bundle.accessContext.tenantId } : {}),
             ...(bundle.accessContext.branchId ? { branchId: bundle.accessContext.branchId } : {}),
+            ...(bundle.rememberMe !== undefined ? { rememberMe: bundle.rememberMe } : {}),
         };
     }
 }

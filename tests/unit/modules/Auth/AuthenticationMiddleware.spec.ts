@@ -18,6 +18,7 @@ describe('AuthenticationMiddleware', () => {
         const request = {
             headers: {
                 authorization: `Bearer ${token}`,
+                host: 'tenant-1.example.test',
             },
         };
         const response = {

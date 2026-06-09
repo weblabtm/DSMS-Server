@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
-import { EnvironmentConfig } from '../config/environment.js';
-import { DatabaseConnection } from '../infrastructure/database/database-connection.js';
+import { EnvironmentConfig } from '../src/config/environment.js';
+import { DatabaseConnection } from '../src/infrastructure/database/database-connection.js';
 
 async function run() {
     const env = EnvironmentConfig.fromProcessEnv();
@@ -17,7 +17,7 @@ async function run() {
     }
 
     try {
-        const { PrismaRoleMatrixSeeder } = await import('../modules/Auth/infrastructure/PrismaRoleMatrixSeeder.js');
+        const { PrismaRoleMatrixSeeder } = await import('../src/modules/Auth/infrastructure/PrismaRoleMatrixSeeder.js');
         const seeder = new PrismaRoleMatrixSeeder(prisma as any);
         await seeder.seed();
         console.log('RBAC seeding complete');
