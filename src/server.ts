@@ -1,7 +1,9 @@
 import 'dotenv/config';
 
-import { GlitchTipService } from './infrastructure/monitoring/glitchtip.service.js';
-GlitchTipService.init();
+import { MonitorFactory } from './infrastructure/monitoring/MonitorFactory.js';
+MonitorFactory.create();
+
+
 
 import { ServerApplication } from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
