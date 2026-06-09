@@ -1,5 +1,8 @@
 import 'dotenv/config';
 
+import { GlitchTipService } from './infrastructure/monitoring/glitchtip.service.js';
+GlitchTipService.init();
+
 import { ServerApplication } from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
 import { DatabaseConnection } from './infrastructure/database/database-connection.js';
