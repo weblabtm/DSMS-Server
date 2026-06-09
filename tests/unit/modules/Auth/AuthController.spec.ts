@@ -205,7 +205,7 @@ describe('AuthController', () => {
                 ip: '1.1.1.1',
             }));
             expect(response.cookie).toHaveBeenCalledWith('otp_token', 'test-token', expect.any(Object));
-            expect(response.clearCookie).toHaveBeenCalledWith('captcha_verified_token');
+            expect(response.clearCookie).toHaveBeenCalledWith('captcha_verified_token', expect.any(Object));
             expect(response.status).toHaveBeenCalledWith(200);
             expect(response.json).toHaveBeenCalledWith({
                 message: 'OTP generated successfully.',
@@ -231,7 +231,7 @@ describe('AuthController', () => {
             );
 
             expect(otpService.validateOtpAndStore).toHaveBeenCalledWith('test-token', '123456', '', '', '', '', '');
-            expect(response.clearCookie).toHaveBeenCalledWith('otp_token');
+            expect(response.clearCookie).toHaveBeenCalledWith('otp_token', expect.any(Object));
             expect(response.cookie).toHaveBeenCalledWith('otp_verified_token', 'test-verified-token', expect.any(Object));
             expect(response.status).toHaveBeenCalledWith(200);
             expect(response.json).toHaveBeenCalledWith({ message: 'OTP verified successfully.', token: 'test-verified-token' });
