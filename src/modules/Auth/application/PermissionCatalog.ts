@@ -8,6 +8,7 @@ const DEFAULT_PERMISSIONS = [
     new Permission('auth.login', 'Auth', 'login', 'own'),
     new Permission('auth.refresh', 'Auth', 'refresh', 'own'),
     new Permission('tenant.manage', 'Tenant', 'manage', 'global'),
+    new Permission('tenant.view', 'Tenant', 'view', 'tenant'),
     new Permission('user.view', 'User', 'view', 'tenant'),
     new Permission('user.manage', 'User', 'manage', 'tenant'),
     new Permission('settings.manage', 'Settings', 'manage', 'tenant'),
