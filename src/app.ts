@@ -30,6 +30,7 @@ import { type IOtpNotificationService } from './modules/Auth/application/service
 import { CronScheduler } from './shared/infrastructure/cron/CronScheduler.js';
 import { OtpCleanupCronJob } from './modules/Auth/application/services/OtpCleanupCronJob.js';
 import { UnlockReminderCronJob } from './modules/Auth/application/services/UnlockReminderCronJob.js';
+import { tenantContextMiddleware } from './shared/utils/TenantContext.js';
 
 // SMS Notification Module Imports
 import { ConsoleSmsProvider } from './modules/Notification/infrastructure/sms/ConsoleSmsProvider.js';
@@ -278,6 +279,7 @@ export class ServerApplication {
     }
 
     private registerMiddleware(): void {
+        this.app.use(tenantContextMiddleware);
         this.app.use(this.createGlobalRateLimiterMiddleware(this.bruteForceService));
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
