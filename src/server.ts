@@ -1,5 +1,10 @@
 import 'dotenv/config';
 
+import { MonitorFactory } from './infrastructure/monitoring/MonitorFactory.js';
+MonitorFactory.create();
+
+
+
 import { ServerApplication } from './app.js';
 import { EnvironmentConfig } from './config/environment.js';
 import { DatabaseConnection } from './infrastructure/database/database-connection.js';

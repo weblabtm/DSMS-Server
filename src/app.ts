@@ -1,4 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import * as Sentry from '@sentry/node';
 
 import { EnvironmentConfig } from './config/environment.js';
 import { AuthController } from './modules/Auth/presentation/controllers/AuthController.js';
@@ -416,6 +417,7 @@ export class ServerApplication {
     }
 
     private registerErrorHandler(): void {
+        Sentry.setupExpressErrorHandler(this.app);
         this.app.use(this.errorHandler);
     }
 
