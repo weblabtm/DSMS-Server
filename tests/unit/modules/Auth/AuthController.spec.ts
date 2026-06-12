@@ -35,7 +35,7 @@ describe('AuthController', () => {
         const mockCaptchaValidator = {
             validate: vi.fn().mockResolvedValue(true)
         };
-        const controller = new AuthController(authService as never, {} as never, mockCaptchaValidator as never);
+        const controller = new AuthController(authService as never, {} as never, mockCaptchaValidator as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -63,7 +63,7 @@ describe('AuthController', () => {
             authenticateCredentials: vi.fn().mockRejectedValue(new Error('Invalid credentials')),
         };
 
-        const controller = new AuthController(authService as never, {} as never, {} as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -88,7 +88,7 @@ describe('AuthController', () => {
             }),
         };
 
-        const controller = new AuthController(authService as never, {} as never, {} as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -116,7 +116,7 @@ describe('AuthController', () => {
             logout: vi.fn(),
         };
 
-        const controller = new AuthController(authService as never, {} as never, {} as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -145,7 +145,7 @@ describe('AuthController', () => {
             logout: vi.fn(),
         };
 
-        const controller = new AuthController(authService as never, {} as never, {} as never);
+        const controller = new AuthController(authService as never, {} as never, {} as never, {} as never);
         const response = {
             status: vi.fn().mockReturnThis(),
             send: vi.fn(),
@@ -163,7 +163,7 @@ describe('AuthController', () => {
             const otpService = {
                 generateOtp: vi.fn().mockRejectedValue(new Error('Invalid or expired CAPTCHA token.')),
             };
-            const controller = new AuthController({} as never, otpService as never, {} as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
@@ -186,7 +186,7 @@ describe('AuthController', () => {
             const otpService = {
                 generateOtp: vi.fn().mockResolvedValue({ token: 'test-token', otp: '123456' }),
             };
-            const controller = new AuthController({} as never, otpService as never, {} as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
@@ -205,7 +205,7 @@ describe('AuthController', () => {
                 ip: '1.1.1.1',
             }));
             expect(response.cookie).toHaveBeenCalledWith('otp_token', 'test-token', expect.any(Object));
-            expect(response.clearCookie).toHaveBeenCalledWith('captcha_verified_token');
+            expect(response.clearCookie).toHaveBeenCalledWith('captcha_verified_token', expect.any(Object));
             expect(response.status).toHaveBeenCalledWith(200);
             expect(response.json).toHaveBeenCalledWith({
                 message: 'OTP generated successfully.',
@@ -217,7 +217,7 @@ describe('AuthController', () => {
             const otpService = {
                 validateOtpAndStore: vi.fn().mockResolvedValue('test-verified-token'),
             };
-            const controller = new AuthController({} as never, otpService as never, {} as never);
+            const controller = new AuthController({} as never, otpService as never, {} as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
@@ -231,14 +231,14 @@ describe('AuthController', () => {
             );
 
             expect(otpService.validateOtpAndStore).toHaveBeenCalledWith('test-token', '123456', '', '', '', '', '');
-            expect(response.clearCookie).toHaveBeenCalledWith('otp_token');
+            expect(response.clearCookie).toHaveBeenCalledWith('otp_token', expect.any(Object));
             expect(response.cookie).toHaveBeenCalledWith('otp_verified_token', 'test-verified-token', expect.any(Object));
             expect(response.status).toHaveBeenCalledWith(200);
             expect(response.json).toHaveBeenCalledWith({ message: 'OTP verified successfully.', token: 'test-verified-token' });
         });
 
         it('validateOtp: returns error if OTP token is missing', async () => {
-            const controller = new AuthController({} as never, {} as never, {} as never);
+            const controller = new AuthController({} as never, {} as never, {} as never, {} as never);
             const response = {
                 status: vi.fn().mockReturnThis(),
                 json: vi.fn(),
@@ -284,7 +284,7 @@ describe('AuthController', () => {
                 validate: vi.fn().mockResolvedValue(false)
             };
 
-            const controller = new AuthController(authService as never, {} as never, mockCaptchaValidator as never);
+            const controller = new AuthController(authService as never, {} as never, mockCaptchaValidator as never, {} as never);
 
             (controller as any).loginStateMemoryStore.set('test-login-state-token', {
                 userId: 'user-1',
