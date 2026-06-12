@@ -88,7 +88,7 @@ export const authOpenApi = {
                                 superAdminLogin: {
                                     summary: 'Super Admin login',
                                     value: {
-                                        identifier: 'superadmin@email.com',
+                                        identifier: 'weblabtm@gmail.com',
                                         password: 'your-password',
                                     },
                                 },

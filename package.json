@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "lint": "eslint .",
     "dev": "nodemon --watch src --watch .env --ext ts,json,env --exec tsx src/server.ts",
     "build": "tsc",
     "vercel-build": "npm run prisma:generate && npm run build",
@@ -27,11 +28,11 @@
   "type": "module",
   "description": "",
   "dependencies": {
-    "@types/express": "^5.0.6",
-    "@types/nodemailer": "^8.0.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@sentry/node": "^10.55.0",
+    "@types/express": "^5.0.6",
+    "@types/nodemailer": "^8.0.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.2.1",
     "express": "^5.2.1",
@@ -42,12 +43,16 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.1",
     "@types/swagger-ui-express": "^4.1.8",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
     "nodemon": "^3.1.14",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
     "vitest": "^1.0.0"
   }
 }

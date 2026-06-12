@@ -131,7 +131,7 @@ export class TenantService {
             }
 
             const created = await tenantDelegate.create({
-                data: { id, name: input.name, slug, isActive: true, planTier: 'BASIC' },
+                data: { id, name: input.name, slug, isActive: true, planTier: 'BASIC', planExpiresAt: null },
             });
 
             await (this.prismaClient as any).authUser.update({

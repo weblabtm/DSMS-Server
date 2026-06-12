@@ -26,7 +26,7 @@ export async function bootstrapSuperAdmin(prisma: PrismaClient, env: NodeJS.Proc
             if (!existing.phoneNumber) {
                 await (prisma as any).authUser.update({
                     where: { identifier },
-                    data: { phoneNumber: '+94712345678' }
+                    data: { phoneNumber: '+94000000000' }
                 });
                 console.log(`Updated Super Admin with test phone number: +94712345678`);
             }

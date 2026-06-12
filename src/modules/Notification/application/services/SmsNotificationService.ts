@@ -30,7 +30,7 @@ export class SmsNotificationService {
         private readonly tenantNameResolver?: ITenantNameResolver,
         private readonly enableSms = true,
         private readonly defaultSmsService?: string
-    ) {}
+    ) { }
 
     /**
      * Queues an SMS for delivery.
@@ -84,14 +84,15 @@ export class SmsNotificationService {
                 nextRetryAt: new Date(),
                 tenantId: tenantId ?? null,
                 branchId: branchId ?? null,
-                // Store the pre-resolved sender name so retries use the same sender
                 senderName: senderName ?? null,
             },
         });
 
-        this.attemptDelivery(smsMessage.id).catch((err) => {
+        try {
+            await this.attemptDelivery(smsMessage.id);
+        } catch (err) {
             console.error(`[SmsNotificationService] Immediate delivery attempt failed for ${smsMessage.id}:`, err);
-        });
+        }
 
         return smsMessage;
     }
