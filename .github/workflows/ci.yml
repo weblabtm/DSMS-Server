@@ -117,6 +117,9 @@ jobs:
             npx tsx scripts/seed-rbac.ts
           fi
 
+      - name: Run lint
+        run: npm run lint
+
       - name: Run unit tests
         run: npm run test:unit
 

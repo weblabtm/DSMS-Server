@@ -9,6 +9,31 @@ Driving School Management System server codebase
 - [Redis infrastructure](src/infrastructure/redis/README.md)
 - [Storage infrastructure](src/infrastructure/storage/README.md)
 
+## Multi-Tenant Database Isolation Sandbox
+
+The backend database client automatically scopes all operations to the active request's tenant to prevent cross-tenant data leaks. 
+
+- **How it works**:
+  - Web requests flow through a global Express middleware that extracts the tenant identifier from the request headers and scopes the request inside a Node `AsyncLocalStorage` context.
+  - The Prisma Client is configured with an extension ([tenantIsolationExtension](file:///c:/Users/sadee/Documents/weblabtm/sadeeshaweblabtm/DSMS-Server/src/infrastructure/database/tenant-isolation.ts)) that intercepts all queries. If the target model contains a `tenantId` field, it dynamically injects the current tenant ID into the query filters or creation data.
+  - Mutations (`update`, `delete`) verify record ownership against the active tenant context first before proceeding, throwing an error if a tenant boundary breach is attempted.
+  - Cron jobs, DB seeders, and start-up scripts run outside of a request context and skip scoping checks.
+
+### Static Code Guards and CI Pipelines
+
+To enforce multi-tenant isolation, the codebase includes strict ESLint rules blocking direct raw queries (`$queryRaw`, `$queryRawUnsafe`, `$executeRaw`, `$executeRawUnsafe`), as these bypass the query scoping extension layer.
+- Run the server linter: `npm run lint`
+- Run integration tests: `npm run test:integration`
+
+### ╔═══ AGENT / DEVELOPER RULES ═══╗
+- **❌ DO NOT bypass the ORM layer**: Never use raw database queries (`$queryRaw`, `$queryRawUnsafe`, `$executeRaw`, `$executeRawUnsafe`). The CI pipeline runs `npm run lint` and will reject commits violating this rule.
+- **✅ DO rely on automatic scoping**: You do not need to manually append `{ where: { tenantId } }` for every model query inside Express request handlers; the database client automatically applies the boundary context.
+- **✅ DO use standard Prisma methods**: Use standard Prisma queries (`findFirst`, `findMany`, `update`, etc.) as they are fully covered by the isolation sandbox.
+- **⚠️ findUnique compatibility**: Under the hood, `findUnique` operations are converted to `findFirst` to allow filtering on both unique fields and the non-unique `tenantId` field.
+- **⚠️ Upsert operations**: `upsert` queries are translated to sequential search + write operations. This ensures that created or updated records are scoped correctly to the active tenant.
+- **❌ DO NOT construct new Prisma clients**: Always use the shared database client created at server bootstrap, which is pre-configured with the query filters.
+╚═════════════════════════════════╝
+
 ## Developer Guides
 
 - [Auth Module Overview](src/modules/Auth/README.md)

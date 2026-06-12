@@ -1,6 +1,18 @@
+/**
+ * @file database-connection.ts
+ * @layer DATABASE — Database connection manager and PrismaClient initialization.
+ *
+ * ╔═══ AGENT / DEVELOPER RULES ═══╗
+ * * **❌ DO NOT construct new Prisma clients**: Always use the shared client instance returned by `databaseConnection.getClient()`.
+ * * **❌ DO NOT use raw database queries**: Avoid `$queryRaw`, `$queryRawUnsafe`, `$executeRaw`, and `$executeRawUnsafe` unless in explicitly bypassed files (e.g. database connection health check, migrations, tests).
+ * * **✅ DO apply the tenant isolation extension**: The client instantiated here is extended with `tenantIsolationExtension` to enforce strict request-level multi-tenancy.
+ * ╚═════════════════════════════════╝
+ */
+
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaClient } from '../../generated/prisma/client.js';
+import { tenantIsolationExtension } from './tenant-isolation.js';
 
 export class DatabaseConnection {
     private readonly client: PrismaClient | null;
@@ -29,7 +41,8 @@ export class DatabaseConnection {
             }
 
             const adapter = new PrismaPg({ connectionString: databaseUrl });
-            this.client = new PrismaClient({ adapter });
+            const rawClient = new PrismaClient({ adapter });
+            this.client = rawClient.$extends(tenantIsolationExtension) as any;
         } catch (error) {
             this.client = null;
             this.lastError = error instanceof Error ? error.message : String(error);
