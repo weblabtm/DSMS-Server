@@ -9,6 +9,7 @@ import { PermissionCatalog } from './PermissionCatalog.js';
 const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly string[]> = {
     'Tenant Admin': [
         'tenant.manage',
+        'tenant.view',
         'user.view',
         'user.manage',
         'settings.manage',
@@ -34,6 +35,7 @@ const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly st
         'progress.viewOwn',
     ],
     'Branch Manager': [
+        'tenant.view',
         'user.view',
         'student.view',
         'student.manage',
@@ -53,6 +55,7 @@ const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly st
         'expense.manage',
     ],
     Instructor: [
+        'tenant.view',
         'student.view',
         'batch.view',
         'scheduling.view',
@@ -64,6 +67,7 @@ const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly st
         'notification.manage',
     ],
     'Front Desk': [
+        'tenant.view',
         'student.view',
         'student.manage',
         'batch.view',
@@ -74,6 +78,7 @@ const ROLE_PERMISSION_KEYS: Record<Exclude<RoleName, 'Super Admin'>, readonly st
         'notification.manage',
     ],
     Student: [
+        'tenant.view',
         'student.viewOwn',
         'payment.viewOwn',
         'progress.viewOwn',

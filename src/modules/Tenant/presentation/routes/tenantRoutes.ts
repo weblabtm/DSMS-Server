@@ -11,8 +11,8 @@ export const createTenantRouter = (controller: TenantController, auth: Authoriza
     // GET /tenant/slug/:slug/availability - check slug availability (Public)
     router.get('/slug/:slug/availability', controller.checkSlugAvailability.bind(controller));
 
-    // GET /tenant/slug/:slug - find tenant by slug
-    router.get('/slug/:slug', auth.require('tenant.manage'), controller.getBySlug.bind(controller));
+    // GET /tenant/slug/:slug - find tenant by slug (all tenant roles — used by the resolution pipeline)
+    router.get('/slug/:slug', auth.require('tenant.view'), controller.getBySlug.bind(controller));
 
     // GET /tenant/ - list
     router.get('/', auth.require('tenant.manage'), controller.list.bind(controller));
